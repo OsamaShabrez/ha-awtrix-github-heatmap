@@ -1,0 +1,25 @@
+from __future__ import annotations
+
+DOMAIN = "github_heatmap"
+
+CONF_USERNAME = "username"
+CONF_DEVICE_ID = "device_id"
+CONF_REFRESH = "refresh"
+CONF_ENABLED = "enabled"
+CONF_AVATAR_CONTRAST = "avatar_contrast"
+
+DEFAULT_REFRESH = 60
+DEFAULT_ENABLED = True
+DEFAULT_AVATAR_CONTRAST = 1.0
+
+API_URL = (
+    "https://github-contributions-api.jogruber.de/v4/"
+    "{username}?y=last"
+)
+
+GITHUB_USER_API = "https://api.github.com/users/{username}"
+
+APP_NAME = "github_heatmap"
+
+PANEL_W = 32
+PANEL_H = 8
