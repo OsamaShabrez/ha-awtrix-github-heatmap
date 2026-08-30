@@ -48,8 +48,6 @@ async def async_setup_entry(
         entry.data[CONF_DEVICE_ID],
     )
 
-    # Backwards compatibility with the
-    # original single-device configuration.
     if isinstance(device_ids, str):
         device_ids = [device_ids]
 
@@ -90,15 +88,11 @@ async def async_setup_entry(
         )
 
         await coordinator.remove()
-
         return True
 
     try:
         await coordinator.async_config_entry_first_refresh()
 
-        # AWTRIX NG entities may not be available yet
-        # when this integration starts. Wait for the
-        # MQTT-prefix sensors before publishing.
         await coordinator.async_wait_for_mqtt_prefixes()
 
         await coordinator.publish()

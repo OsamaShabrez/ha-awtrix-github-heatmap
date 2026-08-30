@@ -1,0 +1,3 @@
+refresh:
+  name: Refresh
+  description: Fetch the latest GitHub contributions and publish the heatmap.

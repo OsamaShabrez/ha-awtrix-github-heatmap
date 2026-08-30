@@ -16,7 +16,9 @@ LEVEL_COLORS = [
 MONTH_MARKER = 0x666666
 
 
-def build_column(days: list[dict]) -> list[int]:
+def build_column(
+    days: list[dict],
+) -> list[int]:
     """Convert one week into an 8-pixel column."""
 
     column = [0] * PANEL_H
@@ -26,8 +28,6 @@ def build_column(days: list[dict]) -> list[int]:
             day["date"]
         )
 
-        # GitHub weeks run Sunday -> Saturday.
-        # Row 0 is the month marker.
         row = (current.weekday() + 1) % 7
         row += 1
 
@@ -54,7 +54,9 @@ def build_grid(
     """Build 32x8 column-major pixel buffer."""
 
     if not days:
-        return [0] * (PANEL_W * PANEL_H)
+        return [0] * (
+            PANEL_W * PANEL_H
+        )
 
     days = sorted(
         days,
@@ -65,7 +67,6 @@ def build_grid(
         days[-1]["date"]
     )
 
-    # Extend the final week through Saturday.
     anchor_date = last_date
 
     while anchor_date.weekday() != 5:
@@ -116,7 +117,6 @@ def build_grid(
         PANEL_W * PANEL_H
     )
 
-    # Avatar occupies columns 0-7.
     heatmap_offset = (
         9 if avatar else 0
     )
@@ -130,8 +130,6 @@ def build_grid(
         available,
     )
 
-    # Oldest available week on left,
-    # newest on right.
     for index in range(count):
         source_index = (
             count - 1 - index

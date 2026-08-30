@@ -1,0 +1,50 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "GitHub Heatmap",
+        "description": "Display a GitHub contribution heatmap on one or more AWTRIX NG clocks.",
+        "data": {
+          "username": "GitHub username",
+          "device_id": "AWTRIX clocks",
+          "refresh": "Refresh interval (minutes)",
+          "enabled": "Enabled"
+        },
+        "data_description": {
+          "username": "One GitHub account per integration entry.",
+          "device_id": "Select one or more AWTRIX NG clocks.",
+          "refresh": "How often to fetch GitHub contribution data.",
+          "enabled": "Disable to remove the GitHub Heatmap app from all selected clocks."
+        }
+      }
+    },
+    "error": {
+      "invalid_username": "GitHub username cannot be empty.",
+      "no_device": "Select at least one AWTRIX clock."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "GitHub Heatmap",
+        "description": "Change the GitHub account, AWTRIX clocks, refresh interval, or enabled state.",
+        "data": {
+          "username": "GitHub username",
+          "device_id": "AWTRIX clocks",
+          "refresh": "Refresh interval (minutes)",
+          "enabled": "Enabled"
+        },
+        "data_description": {
+          "username": "One GitHub account per integration entry.",
+          "device_id": "Select one or more AWTRIX NG clocks.",
+          "refresh": "How often to fetch GitHub contribution data.",
+          "enabled": "Disable to remove the app from all selected clocks."
+        }
+      }
+    },
+    "error": {
+      "invalid_username": "GitHub username cannot be empty.",
+      "no_device": "Select at least one AWTRIX clock."
+    }
+  }
+}
