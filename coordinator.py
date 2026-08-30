@@ -4,7 +4,8 @@ import asyncio
 import base64
 import json
 import logging
-from datetime import timedelta
+import time
+from datetime import datetime, timezone
 from io import BytesIO
 
 import aiohttp
@@ -19,9 +20,13 @@ from homeassistant.helpers.update_coordinator import (
 )
 
 from .const import (
+    API_RETRIES,
     API_URL,
     APP_NAME,
+    AVATAR_CACHE_HOURS,
     GITHUB_USER_API,
+    MQTT_RETRIES,
+    MQTT_RETRY_DELAY,
     PANEL_H,
     PANEL_W,
 )
@@ -42,14 +47,28 @@ class GitHubHeatmapCoordinator(
         device_ids: list[str],
         refresh_minutes: int,
         avatar_contrast: float = 1.0,
+        enabled: bool = True,
+        entry_id: str | None = None,
     ) -> None:
         self.username = username
         self.device_ids = device_ids
         self.refresh_minutes = refresh_minutes
         self.avatar_contrast = avatar_contrast
+        self.enabled = enabled
+        self.entry_id = entry_id
 
-        self._availability_unsubs = []
-        self._last_availability = {}
+        self.last_successful_update: datetime | None = None
+
+        self._availability_unsubs: list = []
+        self._last_availability: dict[str, str] = {}
+
+        self._avatar_pixels: list[int] | None = None
+        self._avatar_url: str | None = None
+        self._avatar_fetched_at: float | None = None
+
+        self._auto_publish = False
+        self._update_listener_unsub = None
+        self._publish_lock = asyncio.Lock()
 
         super().__init__(
             hass,
@@ -61,7 +80,7 @@ class GitHubHeatmapCoordinator(
         )
 
     # ------------------------------------------------------------------
-    # MQTT prefix
+    # MQTT prefix / topic handling
     # ------------------------------------------------------------------
 
     def _mqtt_prefix_for_device(
@@ -78,45 +97,40 @@ class GitHubHeatmapCoordinator(
             include_disabled_entities=True,
         )
 
-        _LOGGER.debug(
-            "Looking for MQTT prefix for device %s; "
-            "found %d registered entities",
-            device_id,
-            len(entities),
-        )
-
         for entity in entities:
-            entity_id = entity.entity_id
-
-            if not entity_id.startswith("sensor."):
-                continue
-
-            if not entity_id.endswith("_mqtt_prefix"):
-                continue
-
             state = self.hass.states.get(
-                entity_id
+                entity.entity_id
             )
 
             if state is None:
                 continue
 
-            prefix = state.state.strip()
+            entity_id = entity.entity_id.lower()
 
-            if prefix and prefix.lower() not in (
+            state_name = (
+                state.name or ""
+            ).lower()
+
+            if not (
+                entity_id.endswith("_mqtt_prefix")
+                or "mqtt prefix" in state_name
+            ):
+                continue
+
+            value = state.state.strip()
+
+            if value and value.lower() not in (
                 "unknown",
                 "unavailable",
                 "none",
             ):
-                _LOGGER.debug(
-                    "Resolved MQTT prefix '%s' "
-                    "for device %s from %s",
-                    prefix,
-                    device_id,
-                    entity_id,
-                )
+                return value
 
-                return prefix
+        _LOGGER.debug(
+            "Could not find MQTT prefix sensor for "
+            "AWTRIX device %s",
+            device_id,
+        )
 
         return None
 
@@ -124,67 +138,19 @@ class GitHubHeatmapCoordinator(
         self,
         device_id: str,
     ) -> str | None:
-        """Return MQTT prefix for a selected device."""
+        """Return MQTT prefix for a device."""
 
         return self._mqtt_prefix_for_device(
             device_id
         )
 
-    async def async_wait_for_mqtt_prefixes(
-        self,
-        timeout: int = 30,
-    ) -> bool:
-        """Wait for all selected AWTRIX MQTT prefix sensors."""
-
-        deadline = (
-            self.hass.loop.time()
-            + timeout
-        )
-
-        while self.hass.loop.time() < deadline:
-            missing = []
-
-            for device_id in self.device_ids:
-                if not self.mqtt_prefix(
-                    device_id
-                ):
-                    missing.append(
-                        device_id
-                    )
-
-            if not missing:
-                _LOGGER.debug(
-                    "All AWTRIX MQTT prefixes "
-                    "resolved: %s",
-                    self.device_ids,
-                )
-                return True
-
-            _LOGGER.debug(
-                "Waiting for AWTRIX MQTT entities; "
-                "missing devices: %s",
-                missing,
-            )
-
-            await asyncio.sleep(1)
-
-        _LOGGER.error(
-            "Timed out waiting for AWTRIX MQTT "
-            "prefix sensors; missing devices: %s",
-            missing,
-        )
-
-        return False
-
     def app_topic(
         self,
         device_id: str,
     ) -> str | None:
-        """Return pushed-app topic."""
+        """Return pushed-app MQTT topic."""
 
-        prefix = self.mqtt_prefix(
-            device_id
-        )
+        prefix = self.mqtt_prefix(device_id)
 
         if not prefix:
             return None
@@ -198,25 +164,62 @@ class GitHubHeatmapCoordinator(
         self,
         device_id: str,
     ) -> str | None:
-        """Return availability topic."""
+        """Return AWTRIX availability topic."""
 
-        prefix = self.mqtt_prefix(
-            device_id
-        )
+        prefix = self.mqtt_prefix(device_id)
 
         if not prefix:
             return None
 
         return f"{prefix}/availability"
 
+    async def async_wait_for_mqtt_prefixes(
+        self,
+        timeout: int = 30,
+    ) -> bool:
+        """Wait for all selected AWTRIX MQTT prefixes."""
+
+        deadline = (
+            self.hass.loop.time()
+            + timeout
+        )
+
+        while self.hass.loop.time() < deadline:
+            missing = [
+                device_id
+                for device_id in self.device_ids
+                if not self.mqtt_prefix(device_id)
+            ]
+
+            if not missing:
+                _LOGGER.debug(
+                    "Resolved MQTT prefixes for all "
+                    "selected AWTRIX devices"
+                )
+                return True
+
+            _LOGGER.debug(
+                "Waiting for AWTRIX MQTT entities; "
+                "missing devices=%s",
+                missing,
+            )
+
+            await asyncio.sleep(1)
+
+        _LOGGER.warning(
+            "Timed out waiting for MQTT prefixes; "
+            "missing devices=%s",
+            missing,
+        )
+
+        return False
+
     # ------------------------------------------------------------------
-    # GitHub
+    # GitHub API
     # ------------------------------------------------------------------
 
-    async def _async_update_data(
-        self,
-    ) -> dict:
-        """Fetch last year's GitHub contributions."""
+    async def _async_update_data(self) -> dict:
+        """Fetch the last year's GitHub contributions."""
 
         url = API_URL.format(
             username=self.username
@@ -226,51 +229,78 @@ class GitHubHeatmapCoordinator(
             total=20
         )
 
-        try:
-            async with aiohttp.ClientSession(
-                timeout=timeout
-            ) as session:
-                async with session.get(
-                    url,
-                    headers={
-                        "Accept": "application/json",
-                        "User-Agent": (
-                            "Home-Assistant-GitHub-Heatmap"
-                        ),
-                    },
-                ) as response:
-                    response.raise_for_status()
-                    data = await response.json()
+        last_error: Exception | None = None
 
-            contributions = data.get(
-                "contributions",
-                [],
-            )
+        for attempt in range(
+            1,
+            API_RETRIES + 1,
+        ):
+            try:
+                async with aiohttp.ClientSession(
+                    timeout=timeout
+                ) as session:
+                    async with session.get(
+                        url,
+                        headers={
+                            "Accept": "application/json",
+                            "User-Agent": (
+                                "Home-Assistant-GitHub-Heatmap"
+                            ),
+                        },
+                    ) as response:
+                        response.raise_for_status()
+                        data = await response.json()
 
-            if not contributions:
-                raise UpdateFailed(
-                    "GitHub API returned no contributions"
+                contributions = data.get(
+                    "contributions",
+                    [],
                 )
 
-            _LOGGER.debug(
-                "Fetched %d contribution days; "
-                "last-year total=%s",
-                len(contributions),
-                data.get(
-                    "total",
-                    {},
-                ).get("lastYear"),
-            )
+                if not contributions:
+                    raise UpdateFailed(
+                        "GitHub API returned no contributions"
+                    )
 
-            return data
+                self.last_successful_update = (
+                    datetime.now(timezone.utc)
+                )
 
-        except UpdateFailed:
-            raise
+                _LOGGER.debug(
+                    "Fetched %d GitHub contribution days; "
+                    "last-year total=%s",
+                    len(contributions),
+                    data.get(
+                        "total",
+                        {},
+                    ).get("lastYear"),
+                )
 
-        except Exception as err:
-            raise UpdateFailed(
-                f"Unable to fetch GitHub contributions: {err}"
-            ) from err
+                return data
+
+            except UpdateFailed:
+                raise
+
+            except Exception as err:
+                last_error = err
+
+                if attempt < API_RETRIES:
+                    delay = 2 ** (attempt - 1)
+
+                    _LOGGER.debug(
+                        "GitHub request failed "
+                        "(attempt %d/%d); retrying in %ss: %s",
+                        attempt,
+                        API_RETRIES,
+                        delay,
+                        err,
+                    )
+
+                    await asyncio.sleep(delay)
+
+        raise UpdateFailed(
+            f"Unable to fetch GitHub contributions: "
+            f"{last_error}"
+        ) from last_error
 
     # ------------------------------------------------------------------
     # Avatar
@@ -278,8 +308,20 @@ class GitHubHeatmapCoordinator(
 
     async def fetch_avatar(
         self,
+        force: bool = False,
     ) -> list[int] | None:
-        """Fetch GitHub avatar and convert to 8x8 RGB."""
+        """Fetch and cache the GitHub avatar."""
+
+        now = time.monotonic()
+
+        if (
+            not force
+            and self._avatar_pixels is not None
+            and self._avatar_fetched_at is not None
+            and now - self._avatar_fetched_at
+            < AVATAR_CACHE_HOURS * 3600
+        ):
+            return self._avatar_pixels
 
         user_url = GITHUB_USER_API.format(
             username=self.username
@@ -293,7 +335,6 @@ class GitHubHeatmapCoordinator(
             async with aiohttp.ClientSession(
                 timeout=timeout
             ) as session:
-
                 async with session.get(
                     user_url,
                     headers={
@@ -313,7 +354,18 @@ class GitHubHeatmapCoordinator(
                 )
 
                 if not avatar_url:
-                    return None
+                    _LOGGER.warning(
+                        "GitHub user has no avatar URL"
+                    )
+                    return self._avatar_pixels
+
+                if (
+                    self._avatar_pixels is not None
+                    and avatar_url == self._avatar_url
+                    and not force
+                ):
+                    self._avatar_fetched_at = now
+                    return self._avatar_pixels
 
                 separator = (
                     "&"
@@ -321,12 +373,12 @@ class GitHubHeatmapCoordinator(
                     else "?"
                 )
 
-                avatar_url = (
+                sized_avatar_url = (
                     f"{avatar_url}{separator}s=8"
                 )
 
                 async with session.get(
-                    avatar_url,
+                    sized_avatar_url,
                     headers={
                         "User-Agent": (
                             "Home-Assistant-GitHub-Heatmap"
@@ -366,22 +418,36 @@ class GitHubHeatmapCoordinator(
                         | b
                     )
 
+            if len(pixels) != 64:
+                raise ValueError(
+                    "Avatar conversion did not "
+                    "produce 64 pixels"
+                )
+
+            self._avatar_pixels = pixels
+            self._avatar_url = avatar_url
+            self._avatar_fetched_at = now
+
+            _LOGGER.debug(
+                "GitHub avatar refreshed"
+            )
+
             return pixels
 
-        except Exception:
-            _LOGGER.exception(
-                "Failed to fetch GitHub avatar"
+        except Exception as err:
+            _LOGGER.warning(
+                "Failed to refresh GitHub avatar: %s",
+                err,
             )
-            return None
+
+            return self._avatar_pixels
 
     # ------------------------------------------------------------------
-    # Payload
+    # Rendering / payload
     # ------------------------------------------------------------------
 
-    async def _build_payload(
-        self,
-    ) -> str:
-        """Build AWTRIX bitmap payload."""
+    async def _build_payload(self) -> str:
+        """Build the AWTRIX bitmap payload."""
 
         if not self.data:
             raise UpdateFailed(
@@ -400,9 +466,13 @@ class GitHubHeatmapCoordinator(
             avatar=avatar,
         )
 
-        bitmap = to_row_major(
-            pixels
-        )
+        bitmap = to_row_major(pixels)
+
+        if len(bitmap) != PANEL_W * PANEL_H:
+            raise ValueError(
+                f"Renderer returned {len(bitmap)} pixels; "
+                f"expected {PANEL_W * PANEL_H}"
+            )
 
         raw = bytearray()
 
@@ -419,13 +489,6 @@ class GitHubHeatmapCoordinator(
             raw
         ).decode()
 
-        lifetime_ms = (
-            self.refresh_minutes
-            * 60
-            * 1000
-            * 3
-        )
-
         payload = {
             "draw": [
                 [
@@ -436,9 +499,7 @@ class GitHubHeatmapCoordinator(
                     PANEL_H,
                     encoded,
                 ]
-            ],
-            "lifetimeMs": lifetime_ms,
-            "lifetimeExpiry": "remove",
+            ]
         }
 
         return json.dumps(
@@ -447,34 +508,29 @@ class GitHubHeatmapCoordinator(
         )
 
     # ------------------------------------------------------------------
-    # Publish
+    # Publishing
     # ------------------------------------------------------------------
 
-    async def publish(
+    async def _publish_to_device(
         self,
-    ) -> None:
-        """Publish heatmap to all selected devices."""
+        device_id: str,
+        payload: str,
+    ) -> bool:
+        """Publish to one AWTRIX device with retries."""
 
-        if not self.data:
-            return
+        topic = self.app_topic(device_id)
 
-        payload = await self._build_payload()
-
-        successful = 0
-
-        for device_id in self.device_ids:
-            topic = self.app_topic(
-                device_id
+        if not topic:
+            _LOGGER.warning(
+                "Skipping device %s: MQTT prefix unavailable",
+                device_id,
             )
+            return False
 
-            if not topic:
-                _LOGGER.error(
-                    "Skipping device %s: "
-                    "MQTT prefix unavailable",
-                    device_id,
-                )
-                continue
-
+        for attempt in range(
+            1,
+            MQTT_RETRIES + 1,
+        ):
             try:
                 await mqtt.async_publish(
                     self.hass,
@@ -484,92 +540,160 @@ class GitHubHeatmapCoordinator(
                     retain=False,
                 )
 
-                successful += 1
-
-                _LOGGER.info(
-                    "Published GitHub Heatmap "
-                    "to %s",
-                    topic,
-                )
-
-            except Exception:
-                _LOGGER.exception(
-                    "Failed publishing GitHub "
-                    "Heatmap to device %s",
+                _LOGGER.debug(
+                    "Published GitHub Heatmap to "
+                    "device %s",
                     device_id,
                 )
 
-        if successful == 0:
-            raise UpdateFailed(
-                "Could not publish GitHub Heatmap "
-                "to any selected AWTRIX device"
+                return True
+
+            except Exception as err:
+                if attempt < MQTT_RETRIES:
+                    delay = (
+                        MQTT_RETRY_DELAY
+                        * (2 ** (attempt - 1))
+                    )
+
+                    _LOGGER.debug(
+                        "MQTT publish failed for device %s "
+                        "(attempt %d/%d); retrying in %ss: %s",
+                        device_id,
+                        attempt,
+                        MQTT_RETRIES,
+                        delay,
+                        err,
+                    )
+
+                    await asyncio.sleep(delay)
+
+                else:
+                    _LOGGER.warning(
+                        "MQTT publish failed for device %s "
+                        "after %d attempts: %s",
+                        device_id,
+                        MQTT_RETRIES,
+                        err,
+                    )
+
+        return False
+
+    async def publish(self) -> None:
+        """Render and publish to all selected devices."""
+
+        if not self.enabled:
+            return
+
+        if not self.data:
+            _LOGGER.warning(
+                "Cannot publish GitHub Heatmap: "
+                "no GitHub data"
             )
+            return
 
-    # ------------------------------------------------------------------
-    # Remove
-    # ------------------------------------------------------------------
-
-    async def remove(
-        self,
-    ) -> None:
-        """Remove app from all selected devices."""
-
-        for device_id in self.device_ids:
-            topic = self.app_topic(
-                device_id
-            )
-
-            if not topic:
-                _LOGGER.warning(
-                    "Cannot remove GitHub Heatmap "
-                    "from device %s: "
-                    "MQTT prefix unavailable",
-                    device_id,
-                )
-                continue
-
+        async with self._publish_lock:
             try:
-                await mqtt.async_publish(
-                    self.hass,
-                    topic,
-                    "",
-                    qos=0,
-                    retain=False,
-                )
-
-                _LOGGER.info(
-                    "Removed GitHub Heatmap "
-                    "from device %s",
-                    device_id,
-                )
-
+                payload = await self._build_payload()
             except Exception:
                 _LOGGER.exception(
-                    "Failed removing GitHub Heatmap "
-                    "from device %s",
+                    "Failed to build GitHub Heatmap payload"
+                )
+                return
+
+            successful = 0
+
+            for device_id in self.device_ids:
+                if await self._publish_to_device(
                     device_id,
+                    payload,
+                ):
+                    successful += 1
+
+            if successful:
+                _LOGGER.info(
+                    "Published GitHub Heatmap to %d/%d "
+                    "AWTRIX devices (total=%s)",
+                    successful,
+                    len(self.device_ids),
+                    self.data.get(
+                        "total",
+                        {},
+                    ).get("lastYear"),
+                )
+            else:
+                _LOGGER.warning(
+                    "Could not publish GitHub Heatmap "
+                    "to any selected AWTRIX device"
                 )
 
     # ------------------------------------------------------------------
-    # Availability
+    # Automatic refresh / publishing
     # ------------------------------------------------------------------
 
-    async def subscribe_availability(
+    def start_auto_publish(self) -> None:
+        """Enable publishing after coordinator refreshes."""
+
+        if self._update_listener_unsub is None:
+            self._update_listener_unsub = (
+                self.async_add_listener(
+                    self._coordinator_updated
+                )
+            )
+
+        self._auto_publish = True
+
+    @callback
+    def _coordinator_updated(self) -> None:
+        """Publish after a successful GitHub refresh."""
+
+        if not self._auto_publish or not self.enabled:
+            return
+
+        if not self.last_update_success:
+            _LOGGER.debug(
+                "GitHub refresh failed; retaining "
+                "last successfully published heatmap"
+            )
+            return
+
+        self.hass.async_create_task(
+            self.publish()
+        )
+
+    async def async_refresh_and_publish(
         self,
     ) -> None:
-        """Subscribe to all selected AWTRIX devices."""
+        """Force a GitHub refresh and publish the result."""
+
+        if not self.enabled:
+            return
+
+        await self.async_request_refresh()
+
+        if self.last_update_success and self.data:
+            await self.publish()
+        else:
+            _LOGGER.warning(
+                "Manual GitHub Heatmap refresh failed; "
+                "retaining existing display"
+            )
+
+    # ------------------------------------------------------------------
+    # AWTRIX availability
+    # ------------------------------------------------------------------
+
+    async def subscribe_availability(self) -> None:
+        """Subscribe to every selected AWTRIX availability topic."""
 
         await self.unsubscribe_availability()
 
         for device_id in self.device_ids:
-            topic = self.availability_topic(
-                device_id
-            )
+            topic = self.availability_topic(device_id)
 
             if not topic:
                 _LOGGER.warning(
-                    "Cannot subscribe to availability "
-                    "for device %s",
+                    "Cannot subscribe to availability for "
+                    "device %s: MQTT prefix unavailable",
                     device_id,
                 )
                 continue
@@ -578,17 +702,14 @@ class GitHubHeatmapCoordinator(
             def availability_received(
                 msg,
                 selected_device_id=device_id,
-            ):
+            ) -> None:
                 payload = (
                     msg.payload
-                    if isinstance(
-                        msg.payload,
-                        str,
-                    )
+                    if isinstance(msg.payload, str)
                     else msg.payload.decode(
                         errors="ignore"
                     )
-                )
+                ).strip().lower()
 
                 previous = (
                     self._last_availability.get(
@@ -601,7 +722,7 @@ class GitHubHeatmapCoordinator(
                 ] = payload
 
                 _LOGGER.debug(
-                    "AWTRIX %s availability=%s",
+                    "AWTRIX device %s availability=%s",
                     selected_device_id,
                     payload,
                 )
@@ -628,21 +749,20 @@ class GitHubHeatmapCoordinator(
             )
 
             _LOGGER.debug(
-                "Subscribed to %s",
+                "Subscribed to AWTRIX availability: %s",
                 topic,
             )
 
-    async def unsubscribe_availability(
-        self,
-    ) -> None:
-        """Unsubscribe from availability."""
+    async def unsubscribe_availability(self) -> None:
+        """Unsubscribe from all availability topics."""
 
         for unsub in self._availability_unsubs:
             try:
                 unsub()
             except Exception:
                 _LOGGER.exception(
-                    "Failed to unsubscribe"
+                    "Failed to unsubscribe from "
+                    "AWTRIX availability"
                 )
 
         self._availability_unsubs.clear()
@@ -651,7 +771,10 @@ class GitHubHeatmapCoordinator(
         self,
         device_id: str,
     ) -> None:
-        """Republish when one AWTRIX comes online."""
+        """Republish when a device returns online."""
+
+        if not self.enabled:
+            return
 
         try:
             await asyncio.sleep(2)
@@ -662,33 +785,18 @@ class GitHubHeatmapCoordinator(
             if not self.data:
                 return
 
-            payload = await self._build_payload()
+            async with self._publish_lock:
+                payload = await self._build_payload()
 
-            topic = self.app_topic(
-                device_id
-            )
-
-            if not topic:
-                _LOGGER.error(
-                    "Cannot republish to device %s: "
-                    "MQTT prefix unavailable",
+                if await self._publish_to_device(
                     device_id,
-                )
-                return
-
-            await mqtt.async_publish(
-                self.hass,
-                topic,
-                payload,
-                qos=0,
-                retain=False,
-            )
-
-            _LOGGER.info(
-                "Republished GitHub Heatmap "
-                "to AWTRIX device %s",
-                device_id,
-            )
+                    payload,
+                ):
+                    _LOGGER.info(
+                        "Republished GitHub Heatmap to "
+                        "AWTRIX device %s after it came online",
+                        device_id,
+                    )
 
         except Exception:
             _LOGGER.exception(
@@ -698,14 +806,66 @@ class GitHubHeatmapCoordinator(
             )
 
     # ------------------------------------------------------------------
-    # Shutdown
+    # Removal / shutdown
     # ------------------------------------------------------------------
 
-    async def async_shutdown(
-        self,
-    ) -> None:
-        """Clean up."""
+    async def remove(self) -> None:
+        """Remove the pushed application from all selected devices."""
+
+        for device_id in self.device_ids:
+            topic = self.app_topic(device_id)
+
+            if not topic:
+                _LOGGER.debug(
+                    "Cannot remove GitHub Heatmap from "
+                    "device %s: MQTT prefix unavailable",
+                    device_id,
+                )
+                continue
+
+            for attempt in range(
+                1,
+                MQTT_RETRIES + 1,
+            ):
+                try:
+                    await mqtt.async_publish(
+                        self.hass,
+                        topic,
+                        "",
+                        qos=0,
+                        retain=False,
+                    )
+
+                    _LOGGER.debug(
+                        "Removed GitHub Heatmap from "
+                        "AWTRIX device %s",
+                        device_id,
+                    )
+
+                    break
+
+                except Exception as err:
+                    if attempt < MQTT_RETRIES:
+                        await asyncio.sleep(
+                            MQTT_RETRY_DELAY
+                            * (2 ** (attempt - 1))
+                        )
+                    else:
+                        _LOGGER.warning(
+                            "Failed to remove GitHub Heatmap "
+                            "from device %s: %s",
+                            device_id,
+                            err,
+                        )
+
+    async def async_shutdown(self) -> None:
+        """Clean up listeners and remove the app."""
+
+        self._auto_publish = False
+
+        if self._update_listener_unsub:
+            self._update_listener_unsub()
+            self._update_listener_unsub = None
 
         await self.unsubscribe_availability()
-
         await self.remove()

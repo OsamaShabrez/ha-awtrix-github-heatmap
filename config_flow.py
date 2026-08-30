@@ -3,7 +3,6 @@ from __future__ import annotations
 import voluptuous as vol
 
 from homeassistant import config_entries
-from homeassistant.core import callback
 from homeassistant.helpers import selector
 
 from .const import (
@@ -64,6 +63,8 @@ class GitHubHeatmapConfigFlow(
                     CONF_DEVICE_ID: device_ids,
                 },
                 options={
+                    CONF_USERNAME: username,
+                    CONF_DEVICE_ID: device_ids,
                     CONF_REFRESH: user_input[CONF_REFRESH],
                     CONF_ENABLED: user_input[CONF_ENABLED],
                 },
@@ -89,7 +90,6 @@ class GitHubHeatmapConfigFlow(
                 ): selector.DeviceSelector(
                     selector.DeviceSelectorConfig(
                         integration="mqtt",
-                        manufacturer="Blueforcer",
                         multiple=True,
                     )
                 ),
@@ -115,7 +115,6 @@ class GitHubHeatmapConfigFlow(
         )
 
     @staticmethod
-    @callback
     def async_get_options_flow(
         config_entry: config_entries.ConfigEntry,
     ) -> config_entries.OptionsFlow:
@@ -125,7 +124,7 @@ class GitHubHeatmapConfigFlow(
 
 
 class GitHubHeatmapOptionsFlow(
-    config_entries.OptionsFlow,
+    config_entries.OptionsFlowWithReload,
 ):
     """Handle GitHub Heatmap options."""
 
@@ -138,28 +137,47 @@ class GitHubHeatmapOptionsFlow(
         current_data = self.config_entry.data
         current_options = self.config_entry.options
 
-        stored_devices = current_options.get(
+        username = current_options.get(
+            CONF_USERNAME,
+            current_data.get(CONF_USERNAME, ""),
+        )
+
+        device_ids = current_options.get(
             CONF_DEVICE_ID,
             current_data.get(CONF_DEVICE_ID, []),
         )
 
-        if isinstance(stored_devices, str):
-            stored_devices = [stored_devices]
+        if isinstance(device_ids, str):
+            device_ids = [device_ids]
+
+        refresh = current_options.get(
+            CONF_REFRESH,
+            DEFAULT_REFRESH,
+        )
+
+        enabled = current_options.get(
+            CONF_ENABLED,
+            DEFAULT_ENABLED,
+        )
 
         if user_input is not None:
             username = user_input[CONF_USERNAME].strip()
+
             device_ids = sorted(
                 set(user_input[CONF_DEVICE_ID])
             )
+
+            refresh = user_input[CONF_REFRESH]
+            enabled = user_input[CONF_ENABLED]
 
             if not username:
                 return self.async_show_form(
                     step_id="init",
                     data_schema=self._schema(
-                        username=username,
-                        device_ids=device_ids,
-                        refresh=user_input[CONF_REFRESH],
-                        enabled=user_input[CONF_ENABLED],
+                        username,
+                        device_ids,
+                        refresh,
+                        enabled,
                     ),
                     errors={"base": "invalid_username"},
                 )
@@ -168,10 +186,10 @@ class GitHubHeatmapOptionsFlow(
                 return self.async_show_form(
                     step_id="init",
                     data_schema=self._schema(
-                        username=username,
-                        device_ids=[],
-                        refresh=user_input[CONF_REFRESH],
-                        enabled=user_input[CONF_ENABLED],
+                        username,
+                        device_ids,
+                        refresh,
+                        enabled,
                     ),
                     errors={"base": "no_device"},
                 )
@@ -181,30 +199,18 @@ class GitHubHeatmapOptionsFlow(
                 data={
                     CONF_USERNAME: username,
                     CONF_DEVICE_ID: device_ids,
-                    CONF_REFRESH: user_input[CONF_REFRESH],
-                    CONF_ENABLED: user_input[CONF_ENABLED],
+                    CONF_REFRESH: refresh,
+                    CONF_ENABLED: enabled,
                 },
             )
 
         return self.async_show_form(
             step_id="init",
             data_schema=self._schema(
-                username=current_options.get(
-                    CONF_USERNAME,
-                    current_data.get(
-                        CONF_USERNAME,
-                        "",
-                    ),
-                ),
-                device_ids=stored_devices,
-                refresh=current_options.get(
-                    CONF_REFRESH,
-                    DEFAULT_REFRESH,
-                ),
-                enabled=current_options.get(
-                    CONF_ENABLED,
-                    DEFAULT_ENABLED,
-                ),
+                username,
+                device_ids,
+                refresh,
+                enabled,
             ),
         )
 
@@ -230,7 +236,6 @@ class GitHubHeatmapOptionsFlow(
                 ): selector.DeviceSelector(
                     selector.DeviceSelectorConfig(
                         integration="mqtt",
-                        manufacturer="Blueforcer",
                         multiple=True,
                     )
                 ),

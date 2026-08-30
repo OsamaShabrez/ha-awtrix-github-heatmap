@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import logging
 
+import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, ServiceCall
 
 from .const import (
     CONF_DEVICE_ID,
@@ -13,12 +14,13 @@ from .const import (
     DEFAULT_ENABLED,
     DEFAULT_REFRESH,
     DOMAIN,
+    SERVICE_REFRESH,
 )
 from .coordinator import GitHubHeatmapCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS: list[str] = []
+PLATFORMS: list[str] = ["sensor"]
 
 
 async def async_setup(
@@ -28,6 +30,28 @@ async def async_setup(
     """Set up GitHub Heatmap."""
 
     hass.data.setdefault(DOMAIN, {})
+
+    async def handle_refresh(call: ServiceCall) -> None:
+        """Refresh all enabled GitHub Heatmap entries."""
+
+        coordinators = list(
+            hass.data.get(DOMAIN, {}).values()
+        )
+
+        for coordinator in coordinators:
+            if coordinator.enabled:
+                await coordinator.async_refresh_and_publish()
+
+    if not hass.services.has_service(
+        DOMAIN,
+        SERVICE_REFRESH,
+    ):
+        hass.services.async_register(
+            DOMAIN,
+            SERVICE_REFRESH,
+            handle_refresh,
+            schema=vol.Schema({}),
+        )
 
     return True
 
@@ -53,23 +77,16 @@ async def async_setup_entry(
 
     device_ids = sorted(set(device_ids))
 
-    refresh = entry.options.get(
-        CONF_REFRESH,
-        DEFAULT_REFRESH,
+    refresh = int(
+        entry.options.get(
+            CONF_REFRESH,
+            DEFAULT_REFRESH,
+        )
     )
 
     enabled = entry.options.get(
         CONF_ENABLED,
         DEFAULT_ENABLED,
-    )
-
-    _LOGGER.debug(
-        "Setting up GitHub Heatmap: "
-        "username=%s devices=%s refresh=%s enabled=%s",
-        username,
-        device_ids,
-        refresh,
-        enabled,
     )
 
     coordinator = GitHubHeatmapCoordinator(
@@ -78,15 +95,13 @@ async def async_setup_entry(
         device_ids=device_ids,
         refresh_minutes=refresh,
         avatar_contrast=1.0,
+        enabled=enabled,
+        entry_id=entry.entry_id,
     )
 
     hass.data[DOMAIN][entry.entry_id] = coordinator
 
     if not enabled:
-        _LOGGER.info(
-            "GitHub Heatmap disabled"
-        )
-
         await coordinator.remove()
         return True
 
@@ -99,10 +114,21 @@ async def async_setup_entry(
 
         await coordinator.subscribe_availability()
 
+        coordinator.start_auto_publish()
+
+        await hass.config_entries.async_forward_entry_setups(
+            entry,
+            PLATFORMS,
+        )
+
     except Exception:
         _LOGGER.exception(
             "Initial GitHub Heatmap setup failed"
         )
+
+        # Keep the coordinator alive so a later scheduled
+        # refresh can recover automatically.
+        coordinator.start_auto_publish()
 
     return True
 
@@ -113,6 +139,11 @@ async def async_unload_entry(
 ) -> bool:
     """Unload GitHub Heatmap."""
 
+    unload_ok = await hass.config_entries.async_unload_platforms(
+        entry,
+        PLATFORMS,
+    )
+
     coordinator = hass.data[DOMAIN].pop(
         entry.entry_id,
         None,
@@ -121,4 +152,4 @@ async def async_unload_entry(
     if coordinator:
         await coordinator.async_shutdown()
 
-    return True
+    return unload_ok

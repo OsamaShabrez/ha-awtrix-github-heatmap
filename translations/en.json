@@ -14,7 +14,7 @@
           "username": "One GitHub account per integration entry.",
           "device_id": "Select one or more AWTRIX NG clocks.",
           "refresh": "How often to fetch GitHub contribution data.",
-          "enabled": "Disable to remove the GitHub Heatmap app from all selected clocks."
+          "enabled": "Disable to remove the app from all selected clocks."
         }
       }
     },
