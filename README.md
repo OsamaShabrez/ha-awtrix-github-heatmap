@@ -2,155 +2,173 @@
 
 Display your **GitHub contribution activity directly on an AWTRIX NG clock through Home Assistant**.
 
-The integration fetches the last 365 days of GitHub contribution data, renders it into the AWTRIX NG's **32×8 pixel matrix**, and publishes it as a native AWTRIX pushed app.
+A native Home Assistant custom integration that fetches the last 365 days of GitHub contribution data, renders it into the AWTRIX NG **32×8 pixel matrix**, and publishes it as an AWTRIX pushed app.
 
-> **Home Assistant custom integration · AWTRIX NG · HACS-ready**
+> **Home Assistant · AWTRIX NG · GitHub · MQTT · HACS**
+
+---
 
 ## ✨ Features
 
 - 📊 **365-day GitHub contribution heatmap**
 - 🖥️ **AWTRIX NG 32×8 matrix rendering**
-- 👤 **GitHub avatar displayed as an 8×8 panel**
+- 👤 **GitHub avatar rendered as an 8×8 image**
 - 🔄 Configurable automatic refresh interval
-- 🕐 Avatar caching to avoid unnecessary downloads
+- 💾 Avatar caching to avoid unnecessary downloads
 - 🖥️ **Multiple AWTRIX NG clocks**
 - 👤 One GitHub account per integration entry
-- 🔀 Multiple integration entries can be created for different GitHub accounts
+- 🔀 Multiple integration entries for different GitHub accounts
 - ⚡ Automatically republishes when an AWTRIX clock comes back online
-- 🚫 Disabling the integration removes the `github_heatmap` app from selected clocks
-- 🔄 Changing the selected clocks immediately applies the new configuration
-- 🧹 Removing a clock from the configuration removes the app from that clock
-- 🔁 Failed GitHub requests are retried
-- 📡 Failed MQTT publishes are retried
-- 🛡️ Temporary GitHub/MQTT failures do not intentionally destroy the last valid display
-- 🧪 Manual refresh through the Home Assistant `github_heatmap.refresh` service
-- 📈 Home Assistant sensors for contribution count and update/publish status
-- 🎨 Fixed GitHub-style contribution colors
-- 🌈 Rainbow months: **off**
-- 📅 Month splitting: **off**
-- 🎯 Avatar: **on**
+- 🚫 Disabling the integration removes `github_heatmap` from selected clocks
+- ➕ Adding a clock immediately publishes the app
+- ➖ Removing a clock removes the app from that clock
+- 🔁 GitHub API failures are retried
+- 📡 MQTT failures are retried independently per clock
+- 🛡️ Temporary failures do not intentionally clear the last valid display
+- 🔄 Manual refresh through `github_heatmap.refresh`
+- 📈 Home Assistant status sensors
+- 🎨 GitHub-style contribution levels
+- 🌈 Rainbow months: **OFF**
+- 📅 Month splitting: **OFF**
+- 👤 Avatar: **ON**
 
 ---
 
-## 🖼️ What it displays
+## 🖼️ Display layout
 
-The AWTRIX matrix is divided into two areas:
+The AWTRIX NG matrix is divided into an 8×8 avatar area, a one-pixel separator, and the contribution heatmap.
 
-```text
-┌────────┬─┬──────────────────────────┐
-│        │ │                          │
-│ AVATAR │ │     CONTRIBUTION         │
-│  8×8   │ │       HEATMAP            │
-│        │ │                          │
-│        │ │                          │
-└────────┴─┴──────────────────────────┘
-   8 px    1 px        23 px
+```mermaid
+flowchart LR
+    AV["Avatar<br/>8×8"] --> S["1px<br/>separator"]
+    S --> HM["Contribution heatmap<br/>23×8"]
 ```
 
-The avatar occupies the first **8×8 pixels**, followed by a one-pixel separator. The remaining matrix area displays the newest available contribution weeks.
+The complete AWTRIX matrix remains **32×8 pixels**.
 
-The renderer preserves the column-major pixel representation required internally before converting the final bitmap to AWTRIX's row-major representation.
+The renderer internally uses column-major pixel data and converts the final bitmap to the row-major representation expected by AWTRIX.
 
 ---
 
 ## 🔌 How it works
 
-The integration runs entirely inside Home Assistant.
+Everything runs directly inside Home Assistant. No Cloudflare Worker or separate application is required.
 
-```text
-┌──────────────────────┐
-│      GitHub          │
-│ contribution profile │
-└──────────┬───────────┘
-           │
-           │ HTTPS
-           ▼
-┌────────────────────────────┐
-│ github-contributions-api   │
-│        jogruber.de         │
-└────────────┬───────────────┘
-             │
-             │ contribution data
-             ▼
-┌────────────────────────────┐
-│     Home Assistant         │
-│                            │
-│  GitHub Heatmap            │
-│  ├─ fetch data             │
-│  ├─ cache avatar           │
-│  ├─ render 32×8 bitmap     │
-│  └─ publish MQTT           │
-└────────────┬───────────────┘
-             │
-             │ MQTT
-             ▼
-┌────────────────────────────┐
-│        AWTRIX NG           │
-│                            │
-│   github_heatmap app       │
-└────────────────────────────┘
+```mermaid
+flowchart TD
+    G["GitHub"] -->|HTTPS| A["GitHub Contributions API"]
+    A -->|Contribution data| H["Home Assistant"]
+    H --> R["Render 32×8 bitmap"]
+    H --> C["Cache GitHub avatar"]
+    R --> M["MQTT"]
+    M --> W["AWTRIX NG"]
+    W --> D["github_heatmap app"]
 ```
 
-The integration dynamically obtains the MQTT prefix from the selected AWTRIX NG device's Home Assistant MQTT prefix sensor rather than hardcoding a clock name or MQTT prefix.
+The integration dynamically discovers the MQTT prefix associated with each selected AWTRIX NG device through Home Assistant's MQTT entities.
 
-This allows the same integration to work with multiple AWTRIX NG clocks.
+MQTT prefixes and clock names are therefore **not hardcoded**.
+
+---
+
+## 🖥️ Multiple AWTRIX clocks
+
+Multiple AWTRIX NG clocks can be selected in a single integration entry.
+
+```mermaid
+flowchart TD
+    GH["GitHub account"] --> HA["Home Assistant<br/>GitHub Heatmap"]
+    HA --> C1["AWTRIX NG<br/>Clock 1"]
+    HA --> C2["AWTRIX NG<br/>Clock 2"]
+    HA --> C3["AWTRIX NG<br/>Clock 3"]
+```
+
+Each clock is handled independently.
+
+A failure or offline state on one clock does not prevent the integration from attempting to update the others.
+
+### Multiple GitHub accounts
+
+Each integration entry represents **one GitHub account**.
+
+For example:
+
+```text
+GitHub Heatmap #1
+├── GitHub: user_a
+├── Clock 1
+└── Clock 2
+
+GitHub Heatmap #2
+├── GitHub: user_b
+└── Clock 3
+```
+
+This allows multiple accounts without complicating the configuration of an individual integration entry.
 
 ---
 
 ## 📡 GitHub data source
 
-This project uses the excellent **GitHub Contributions API v4** created by [@grubersjoe](https://github.com/grubersjoe):
+This project was inspired by and uses the API provided by:
 
-**https://github.com/grubersjoe/github-contributions-api**
+**[grubersjoe/github-contributions-api](https://github.com/grubersjoe/github-contributions-api)**
 
-The API scrapes GitHub's contribution profile and exposes the contribution history as structured JSON containing:
+Many thanks to **grubersjoe** for creating and maintaining the upstream project.
 
-- contribution totals
-- individual dates
-- contribution counts
-- contribution levels
+The API exposes GitHub contribution history as structured JSON, including contribution totals, dates, counts, and contribution levels.
 
-The API supports requesting GitHub's "last year" view using:
-
-```text
-?y=last
-```
-
-This project therefore uses:
+For the last 365 days, this project uses:
 
 ```text
 https://github-contributions-api.jogruber.de/v4/<USERNAME>?y=last
 ```
 
-The API documentation states that results are cached for approximately one hour and exposes both yearly totals and daily contribution data.
+For example:
 
-### Why this API?
+```text
+https://github-contributions-api.jogruber.de/v4/osamashabrez?y=last
+```
 
-The original motivation was to reproduce the contribution heatmap visible on GitHub without requiring a GitHub OAuth flow or a GitHub token inside Home Assistant.
+The `?y=last` parameter requests the contribution data corresponding to GitHub's last-year contribution view.
 
-This is particularly useful because GitHub's contribution graph can contain activity that is difficult to reproduce reliably through the standard GitHub REST API alone.
+See the upstream project for API implementation details, caching behavior, limitations, and licensing:
 
-**Credit:** This project would not exist in its current form without the work behind `github-contributions-api` by [grubersjoe](https://github.com/grubersjoe).
-
-Please see the upstream project for its implementation, limitations, caching behavior, and licensing.
+https://github.com/grubersjoe/github-contributions-api
 
 ---
 
-## 🏠 Home Assistant integration
+## 🏠 Home Assistant
 
-This project is implemented as a native Home Assistant custom integration.
+The project is implemented as a native Home Assistant custom integration.
 
-The integration lives under:
+Integration domain:
 
 ```text
-custom_components/github_heatmap/
+github_heatmap
 ```
 
-and is designed to be installed and updated through **HACS**.
+Installation location:
 
-HACS requires integration files to be located under `custom_components/<integration_domain>/` and requires the integration manifest to contain the appropriate metadata.
+```text
+/config/custom_components/github_heatmap/
+```
 
-### Configuration
+The integration provides:
+
+- Config flow
+- Options flow
+- Multiple AWTRIX device selection
+- Automatic refresh
+- MQTT publishing
+- AWTRIX availability handling
+- Avatar caching
+- Status sensors
+- Manual refresh service
+
+---
+
+## ⚙️ Configuration
 
 After installation:
 
@@ -162,20 +180,23 @@ Configure:
 |---|---|
 | **GitHub username** | GitHub account whose contribution graph is displayed |
 | **AWTRIX clocks** | One or more AWTRIX NG clocks |
-| **Refresh interval** | How often GitHub data is fetched |
-| **Enabled** | Enable/disable the AWTRIX app |
+| **Refresh interval** | How often contribution data is fetched |
+| **Enabled** | Enable or disable the heatmap |
 
-The GitHub account is intentionally **one account per integration entry**.
+### Current defaults
 
-If multiple accounts are required, simply create another GitHub Heatmap integration entry.
-
-Multiple clocks can be selected for each entry.
+```text
+Avatar:          ON
+Rainbow months:  OFF
+Month split:     OFF
+Refresh:         60 minutes
+```
 
 ---
 
 ## 🔄 Configuration behavior
 
-The integration is designed so that configuration itself controls the AWTRIX app lifecycle.
+Configuration changes are applied through Home Assistant's integration reload mechanism.
 
 ### Enabled → OFF
 
@@ -185,99 +206,116 @@ The integration removes:
 github_heatmap
 ```
 
-from every selected AWTRIX clock.
+from all selected clocks.
 
-No separate Home Assistant automation is required.
+No separate removal automation is required.
 
 ### Enabled → ON
 
-The integration fetches the current GitHub data and republishes the application.
+The integration fetches the latest contribution data and publishes the app.
 
-### Clock removed
+### Add a clock
 
-If a clock is removed from the selected-device configuration, the integration removes the `github_heatmap` app from that clock.
+The newly selected clock receives the current heatmap.
 
-### Clock added
+### Remove a clock
 
-The newly selected clock receives the application immediately after the configuration reload.
+The integration removes the `github_heatmap` app from the removed clock.
 
-### Refresh interval changed
+### Change username
 
-The coordinator is recreated with the new interval and starts using the new schedule.
+The integration reloads using the new GitHub account.
+
+### Change refresh interval
+
+The coordinator is recreated with the new interval.
 
 ---
 
-## 🔁 Automatic refresh
+## 🔄 Automatic refresh
 
 The integration uses Home Assistant's `DataUpdateCoordinator`.
 
-The normal flow is:
-
-```text
-Timer
-  ↓
-GitHub API
-  ↓
-Contribution data updated
-  ↓
-Renderer
-  ↓
-MQTT publish
-  ↓
-AWTRIX
+```mermaid
+flowchart TD
+    T["Refresh timer"] --> G["Fetch GitHub data"]
+    G --> R["Render heatmap"]
+    R --> M["Publish via MQTT"]
+    M --> A["AWTRIX NG"]
 ```
 
-The existing rendered display is not deliberately removed when a temporary GitHub request fails.
+A normal refresh does **not** unnecessarily download the avatar again.
 
-This prevents a transient API failure from unnecessarily blanking the clock.
+The contribution data and avatar are handled independently.
 
 ---
 
-## 📡 AWTRIX availability
-
-Each selected AWTRIX clock is handled independently.
-
-When an AWTRIX clock reports itself as offline, the integration does not remove the application's configuration from the integration.
-
-When that clock returns online:
-
-```text
-AWTRIX offline
-      ↓
-AWTRIX comes online
-      ↓
-wait briefly for device readiness
-      ↓
-rebuild current bitmap
-      ↓
-publish github_heatmap
-```
-
-This is handled independently for each selected clock.
-
----
-
-## 👤 Avatar
+## 👤 Avatar caching
 
 The GitHub avatar is permanently enabled.
 
-The avatar is rendered into an **8×8 pixel image**.
+The avatar is:
 
-It is cached inside the integration rather than downloaded every contribution refresh.
+1. Retrieved from GitHub.
+2. Resized to **8×8 pixels**.
+3. Converted into the AWTRIX bitmap representation.
+4. Cached in memory.
 
-The current cache lifetime is:
+The current avatar cache period is:
 
 ```text
 24 hours
 ```
 
-Therefore a normal contribution refresh does not cause another avatar download.
+Therefore a contribution refresh does not cause an avatar download every time.
+
+If an avatar refresh fails, the previously cached avatar is retained when available.
+
+---
+
+## 📡 AWTRIX availability
+
+Each selected clock has its own availability subscription.
+
+```mermaid
+flowchart TD
+    O["AWTRIX offline"] --> C["Clock comes online"]
+    C --> W["Wait for device readiness"]
+    W --> R["Rebuild current bitmap"]
+    R --> P["Publish github_heatmap"]
+```
+
+When an AWTRIX clock comes back online, the integration republishes the current heatmap automatically.
+
+Other clocks continue operating independently.
 
 ---
 
 ## 🎨 Rendering
 
-The current configuration intentionally keeps:
+The integration renders:
+
+```text
+32 × 8 = 256 pixels
+```
+
+The first 8 columns are reserved for the avatar.
+
+A one-pixel separator follows the avatar.
+
+The remaining columns contain the contribution heatmap.
+
+Contribution levels use:
+
+| Level | Color |
+|---:|---|
+| 0 | `0x161B22` |
+| 1 | `0x0E4429` |
+| 2 | `0x006D32` |
+| 3 | `0x26A641` |
+| 4 | `0x39D353` |
+
+Current rendering configuration:
 
 ```text
 Rainbow months: OFF
@@ -285,81 +323,71 @@ Month split:    OFF
 Avatar:         ON
 ```
 
-The heatmap uses five contribution levels:
+---
 
-```text
-Level 0 → 0x161B22
-Level 1 → 0x0E4429
-Level 2 → 0x006D32
-Level 3 → 0x26A641
-Level 4 → 0x39D353
-```
+## 🧯 Error handling
 
-The contribution data is transformed into the AWTRIX NG matrix representation and validated to ensure the final bitmap contains exactly:
+The integration is designed to tolerate temporary failures.
 
-```text
-32 × 8 = 256 pixels
-```
+### GitHub API
+
+Requests are retried when they fail.
+
+If the refresh ultimately fails, the existing successful coordinator data is retained rather than intentionally replacing the display with an empty heatmap.
+
+### MQTT
+
+MQTT publication is retried.
+
+Each selected clock is handled independently.
+
+A failed clock does not prevent publishing to another clock.
+
+### AWTRIX offline
+
+The application is not deliberately removed simply because a clock is temporarily unavailable.
+
+When the clock reports that it is online again, the current heatmap is republished.
 
 ---
 
-## 🛠️ Manual refresh
+## 🔄 Manual refresh
 
-A Home Assistant service is provided:
+The integration provides:
 
 ```yaml
 action: github_heatmap.refresh
 ```
 
-This forces the integration to:
+This forces an immediate refresh.
 
-1. Fetch the latest GitHub contribution data.
-2. Render the heatmap.
-3. Publish it to all selected AWTRIX clocks.
+It:
 
-Useful for testing configuration changes without waiting for the normal refresh interval.
+1. Fetches the latest GitHub contribution data.
+2. Re-renders the heatmap.
+3. Publishes it to all selected AWTRIX clocks.
+
+This is useful when testing changes without waiting for the configured refresh interval.
 
 ---
 
 ## 📊 Home Assistant entities
 
-The integration exposes status information including:
+The integration exposes status information through Home Assistant sensors.
 
 ### Contributions
 
-The GitHub contribution total for the requested last-year period.
+The GitHub contribution total for the last-year dataset.
 
 ### Last Update
 
-Timestamp of the last successful GitHub data update.
+Timestamp of the last successful GitHub contribution update.
 
 ### Last Publish
 
 Timestamp of the last successful AWTRIX MQTT publication.
 
-These provide simple visibility into whether the integration is operating normally.
-
----
-
-## 🧯 Error handling
-
-The integration is designed around transient failures being recoverable.
-
-### GitHub
-
-Failed API requests are retried.
-
-If the refresh still fails, the previously successful coordinator data remains available rather than deliberately replacing the clock display with an empty heatmap.
-
-### MQTT
-
-MQTT publication is retried independently.
-
-A failure on one AWTRIX clock does not prevent publication attempts to other selected clocks.
-
-### AWTRIX availability
-
-Individual clocks are tracked independently so one offline device does not prevent the integration from serving other clocks.
+These make it easier to determine whether the integration is operating normally.
 
 ---
 
@@ -367,19 +395,18 @@ Individual clocks are tracked independently so one offline device does not preve
 
 ### HACS
 
-Once available through HACS:
+Once the repository is available through the HACS default repository list:
 
 1. Open **HACS**.
 2. Search for **AWTRIX NG GitHub Heatmap**.
 3. Install the integration.
 4. Restart Home Assistant if requested.
-5. Add **GitHub Heatmap** from **Settings → Devices & services**.
+5. Go to **Settings → Devices & services**.
+6. Add **GitHub Heatmap**.
 
-### Custom repository
+### HACS custom repository
 
-During development, the repository can be added to HACS as a custom repository.
-
-Repository:
+During development, the repository can be added manually as a custom HACS repository:
 
 ```text
 https://github.com/OsamaShabrez/ha-awtrix-github-heatmap
@@ -391,17 +418,9 @@ Select:
 Integration
 ```
 
-HACS supports installing public GitHub repositories as custom repositories when they follow the expected repository structure.
-
 ---
 
-## 🧑‍💻 Development
-
-Repository:
-
-**https://github.com/OsamaShabrez/ha-awtrix-github-heatmap**
-
-Project structure:
+## 🧑‍💻 Repository structure
 
 ```text
 ha-awtrix-github-heatmap/
@@ -417,41 +436,44 @@ ha-awtrix-github-heatmap/
 │       ├── services.yaml
 │       └── translations/
 │           └── en.json
+│
 ├── .github/
 │   └── workflows/
 │       └── hacs.yml
+│
 ├── hacs.json
 ├── README.md
 └── LICENSE
 ```
 
-The repository uses GitHub Actions for automated HACS/Home Assistant validation.
+---
+
+## 🧪 Development & validation
+
+The repository uses GitHub Actions to validate the integration.
+
+The intended validation pipeline includes:
+
+- HACS validation
+- Home Assistant Hassfest validation
+- Integration manifest validation
+- Repository structure validation
+
+Changes should be committed and pushed through Git so that validation runs automatically.
 
 ---
 
 ## 🚧 Project status
 
-This project is currently under active development.
+This project is actively developed for:
 
-The integration has been built specifically around:
+- **Home Assistant**
+- **AWTRIX NG**
+- **MQTT**
+- **GitHub**
+- **HACS**
 
-- Home Assistant
-- AWTRIX NG
-- MQTT
-- GitHub contribution activity
-- HACS distribution
-
-The architecture is intentionally kept as a Home Assistant integration rather than requiring a separate Cloudflare Worker or external application.
-
-### Current goals
-
-- Reliable AWTRIX publishing
-- Multiple AWTRIX clocks
-- Automatic recovery
-- Minimal configuration
-- HACS distribution
-- Safe configuration updates
-- Maintainable Home Assistant-native implementation
+The goal is a reliable, simple, Home Assistant-native way of displaying GitHub contribution activity on AWTRIX NG clocks.
 
 ---
 
@@ -459,19 +481,19 @@ The architecture is intentionally kept as a Home Assistant integration rather th
 
 ### GitHub Contributions API
 
-Major inspiration and the contribution-data API used by this project:
+Special thanks to **[grubersjoe](https://github.com/grubersjoe)** for the inspiration and the upstream GitHub Contributions API used by this project.
 
-**[grubersjoe/github-contributions-api](https://github.com/grubersjoe/github-contributions-api)**
+Upstream project:
 
-The upstream project provides the API used to retrieve GitHub contribution history.
+https://github.com/grubersjoe/github-contributions-api
 
 ### Home Assistant
 
-Built as a custom Home Assistant integration using Home Assistant's integration and config-flow architecture.
+Built as a Home Assistant custom integration using Home Assistant's integration, config-flow, coordinator, MQTT, and entity architectures.
 
 ### HACS
 
-Designed for distribution through the **Home Assistant Community Store**. HACS provides the installation, update, and repository-management infrastructure for custom Home Assistant integrations.
+Designed for distribution and updates through the **Home Assistant Community Store (HACS)**.
 
 ---
 
@@ -479,7 +501,7 @@ Designed for distribution through the **Home Assistant Community Store**. HACS p
 
 See [`LICENSE`](LICENSE) for the license applicable to this project.
 
-The upstream `github-contributions-api` project has its own license and terms; refer to the upstream repository for those details.
+The upstream `github-contributions-api` project has its own license and terms. Refer to the upstream repository for those details.
 
 ---
 
@@ -487,13 +509,13 @@ The upstream `github-contributions-api` project has its own license and terms; r
 
 Issues, bug reports, improvements, and pull requests are welcome.
 
-If you encounter a problem, please include:
+When reporting an issue, please include:
 
 - Home Assistant version
-- Integration version
+- GitHub Heatmap version
 - AWTRIX NG firmware version
 - Number of configured clocks
 - Relevant Home Assistant logs
-- MQTT-related logs where applicable
+- Relevant MQTT logs
 
-Please avoid posting GitHub credentials, MQTT credentials, or other secrets in issues.
+**Never include GitHub tokens, MQTT credentials, passwords, or other secrets in issues or pull requests.**
