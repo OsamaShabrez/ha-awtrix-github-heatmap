@@ -32,26 +32,31 @@ async def async_setup(
     hass.data.setdefault(DOMAIN, {})
 
     async def handle_refresh(call: ServiceCall) -> None:
-        """Refresh all enabled GitHub Heatmap entries."""
+        """Manually refresh all enabled GitHub Heatmap entries."""
 
         coordinators = list(
             hass.data.get(DOMAIN, {}).values()
         )
 
-        for coordinator in coordinators:
-            if coordinator.enabled:
-                await coordinator.async_refresh_and_publish()
+        if not coordinators:
+            _LOGGER.debug(
+                "Manual refresh requested but no "
+                "GitHub Heatmap entries are loaded"
+            )
+            return
 
-    if not hass.services.has_service(
+        for coordinator in coordinators:
+            if not coordinator.enabled:
+                continue
+
+            await coordinator.async_refresh_and_publish()
+
+    hass.services.async_register(
         DOMAIN,
         SERVICE_REFRESH,
-    ):
-        hass.services.async_register(
-            DOMAIN,
-            SERVICE_REFRESH,
-            handle_refresh,
-            schema=vol.Schema({}),
-        )
+        handle_refresh,
+        schema=vol.Schema({}),
+    )
 
     return True
 
@@ -60,7 +65,7 @@ async def async_setup_entry(
     hass: HomeAssistant,
     entry: ConfigEntry,
 ) -> bool:
-    """Set up GitHub Heatmap."""
+    """Set up a GitHub Heatmap config entry."""
 
     username = entry.options.get(
         CONF_USERNAME,
@@ -75,7 +80,9 @@ async def async_setup_entry(
     if isinstance(device_ids, str):
         device_ids = [device_ids]
 
-    device_ids = sorted(set(device_ids))
+    device_ids = list(
+        dict.fromkeys(device_ids)
+    )
 
     refresh = int(
         entry.options.get(
@@ -84,9 +91,11 @@ async def async_setup_entry(
         )
     )
 
-    enabled = entry.options.get(
-        CONF_ENABLED,
-        DEFAULT_ENABLED,
+    enabled = bool(
+        entry.options.get(
+            CONF_ENABLED,
+            DEFAULT_ENABLED,
+        )
     )
 
     coordinator = GitHubHeatmapCoordinator(
@@ -94,14 +103,24 @@ async def async_setup_entry(
         username=username,
         device_ids=device_ids,
         refresh_minutes=refresh,
-        avatar_contrast=1.0,
         enabled=enabled,
         entry_id=entry.entry_id,
     )
 
     hass.data[DOMAIN][entry.entry_id] = coordinator
 
+    await hass.config_entries.async_forward_entry_setups(
+        entry,
+        PLATFORMS,
+    )
+
     if not enabled:
+        _LOGGER.info(
+            "GitHub Heatmap disabled; removing app "
+            "from %d selected AWTRIX device(s)",
+            len(device_ids),
+        )
+
         await coordinator.remove()
         return True
 
@@ -110,24 +129,19 @@ async def async_setup_entry(
 
         await coordinator.async_wait_for_mqtt_prefixes()
 
-        await coordinator.publish()
-
         await coordinator.subscribe_availability()
 
-        coordinator.start_auto_publish()
+        await coordinator.publish()
 
-        await hass.config_entries.async_forward_entry_setups(
-            entry,
-            PLATFORMS,
-        )
+        coordinator.start_auto_publish()
 
     except Exception:
         _LOGGER.exception(
             "Initial GitHub Heatmap setup failed"
         )
 
-        # Keep the coordinator alive so a later scheduled
-        # refresh can recover automatically.
+        # Do not unload the integration.
+        # Future coordinator refreshes can recover.
         coordinator.start_auto_publish()
 
     return True
@@ -137,7 +151,7 @@ async def async_unload_entry(
     hass: HomeAssistant,
     entry: ConfigEntry,
 ) -> bool:
-    """Unload GitHub Heatmap."""
+    """Unload GitHub Heatmap and remove its AWTRIX apps."""
 
     unload_ok = await hass.config_entries.async_unload_platforms(
         entry,
@@ -149,7 +163,7 @@ async def async_unload_entry(
         None,
     )
 
-    if coordinator:
+    if coordinator is not None:
         await coordinator.async_shutdown()
 
     return unload_ok

@@ -22,30 +22,33 @@ def build_column(
     """Convert one GitHub week into an 8-pixel column."""
 
     column = [0] * PANEL_H
-    marker_set = False
 
     for day in days:
         current = date.fromisoformat(
             day["date"]
         )
 
-        # GitHub: Sunday=0 ... Saturday=6.
+        # GitHub uses Sunday -> Saturday.
         # Row 0 is reserved for the month marker.
-        row = current.weekday() + 1
+        row = (
+            current.weekday() + 1
+        )
 
-        if row < 1 or row >= PANEL_H:
+        if row < 1 or row > 7:
             continue
 
         level = min(
-            max(int(day.get("level", 0)), 0),
+            max(
+                int(day.get("level", 0)),
+                0,
+            ),
             4,
         )
 
         column[row] = LEVEL_COLORS[level]
 
-        if not marker_set and current.day == 1:
+        if current.day == 1:
             column[0] = MONTH_MARKER
-            marker_set = True
 
     return column
 
@@ -54,10 +57,12 @@ def build_grid(
     days: list[dict],
     avatar: list[int] | None = None,
 ) -> list[int]:
-    """Build the 32x8 AWTRIX pixel buffer in column-major order."""
+    """Build a 32x8 column-major pixel buffer."""
 
     if not days:
-        return [0] * (PANEL_W * PANEL_H)
+        return [0] * (
+            PANEL_W * PANEL_H
+        )
 
     days = sorted(
         days,
@@ -68,28 +73,28 @@ def build_grid(
         days[-1]["date"]
     )
 
-    # Anchor at the Saturday ending the newest week.
-    days_from_saturday = (
-        5 - last_date.weekday()
-    ) % 7
+    anchor_date = last_date
 
-    anchor_date = (
-        last_date
-        + timedelta(days=days_from_saturday)
-    )
+    while anchor_date.weekday() != 5:
+        anchor_date += timedelta(
+            days=1
+        )
 
-    week_map: dict[int, list[dict]] = {}
+    week_map: dict[
+        int,
+        list[dict],
+    ] = {}
 
     for day in days:
         current = date.fromisoformat(
             day["date"]
         )
 
-        diff_days = (
+        diff = (
             anchor_date - current
         ).days
 
-        week_index = diff_days // 7
+        week_index = diff // 7
 
         week_map.setdefault(
             week_index,
@@ -123,48 +128,49 @@ def build_grid(
         PANEL_W * PANEL_H
     )
 
-    # Avatar occupies columns 0-7.
-    # Column 8 is the separator.
-    left_offset = (
-        PANEL_H + 1
-        if avatar and len(avatar) == 64
+    # Avatar: columns 0-7.
+    # Column 8: one-pixel separator.
+    heatmap_offset = (
+        9
+        if avatar is not None
+        and len(avatar) == 64
         else 0
     )
 
-    available_columns = (
-        PANEL_W - left_offset
+    available = (
+        PANEL_W - heatmap_offset
     )
 
-    # The physical 32x8 display cannot show all
-    # ~52 calendar weeks simultaneously.
-    # With the 8x8 avatar, 23 newest weeks fit.
-    column_count = min(
+    count = min(
         len(columns),
-        available_columns,
+        available,
     )
 
-    # Newest week is on the right.
-    # Therefore the oldest visible week is on the left.
-    for index in range(column_count):
+    # Oldest visible week left,
+    # newest visible week right.
+    for index in range(count):
         source_index = (
-            column_count - 1 - index
+            count - 1 - index
         )
 
         target_column = (
-            left_offset + index
+            heatmap_offset + index
         )
 
-        column = columns[source_index]
+        column = columns[
+            source_index
+        ]
 
         for row in range(PANEL_H):
             pixels[
-                target_column * PANEL_H + row
+                target_column
+                * PANEL_H
+                + row
             ] = column[row]
 
-    if avatar and len(avatar) == 64:
-        # Avatar arrives row-major.
-        # AWTRIX internal buffer is column-major.
-        # Transpose it to keep the avatar upright.
+    if avatar is not None and len(avatar) == 64:
+        # Avatar data is row-major.
+        # Internal bitmap is column-major.
         for y in range(8):
             for x in range(8):
                 pixels[
@@ -181,7 +187,9 @@ def to_row_major(
 ) -> list[int]:
     """Convert column-major pixels to AWTRIX row-major."""
 
-    expected = PANEL_W * PANEL_H
+    expected = (
+        PANEL_W * PANEL_H
+    )
 
     if len(pixels) != expected:
         raise ValueError(

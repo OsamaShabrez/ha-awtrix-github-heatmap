@@ -1,8 +1,10 @@
 from __future__ import annotations
 
-import voluptuous as vol
+from typing import Any
 
+import voluptuous as vol
 from homeassistant import config_entries
+from homeassistant.config_entries import ConfigFlowResult
 from homeassistant.helpers import selector
 
 from .const import (
@@ -26,35 +28,61 @@ class GitHubHeatmapConfigFlow(
 
     async def async_step_user(
         self,
-        user_input: dict | None = None,
-    ):
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
         """Handle initial setup."""
 
         if user_input is not None:
             username = user_input[CONF_USERNAME].strip()
+
             device_ids = user_input[CONF_DEVICE_ID]
+
+            if isinstance(device_ids, str):
+                device_ids = [device_ids]
+
+            device_ids = list(
+                dict.fromkeys(device_ids)
+            )
 
             if not username:
                 return self.async_show_form(
                     step_id="user",
-                    data_schema=self._schema(),
-                    errors={"base": "invalid_username"},
+                    data_schema=self._schema(
+                        username=username,
+                        device_ids=device_ids,
+                        refresh=user_input.get(
+                            CONF_REFRESH,
+                            DEFAULT_REFRESH,
+                        ),
+                        enabled=user_input.get(
+                            CONF_ENABLED,
+                            DEFAULT_ENABLED,
+                        ),
+                    ),
+                    errors={
+                        "base": "invalid_username"
+                    },
                 )
 
             if not device_ids:
                 return self.async_show_form(
                     step_id="user",
-                    data_schema=self._schema(),
-                    errors={"base": "no_device"},
+                    data_schema=self._schema(
+                        username=username,
+                        device_ids=device_ids,
+                        refresh=user_input.get(
+                            CONF_REFRESH,
+                            DEFAULT_REFRESH,
+                        ),
+                        enabled=user_input.get(
+                            CONF_ENABLED,
+                            DEFAULT_ENABLED,
+                        ),
+                    ),
+                    errors={
+                        "base": "no_device"
+                    },
                 )
-
-            device_ids = sorted(set(device_ids))
-
-            await self.async_set_unique_id(
-                f"{username.lower()}:{','.join(device_ids)}"
-            )
-
-            self._abort_if_unique_id_configured()
 
             return self.async_create_entry(
                 title=f"GitHub Heatmap - {username}",
@@ -65,28 +93,44 @@ class GitHubHeatmapConfigFlow(
                 options={
                     CONF_USERNAME: username,
                     CONF_DEVICE_ID: device_ids,
-                    CONF_REFRESH: user_input[CONF_REFRESH],
-                    CONF_ENABLED: user_input[CONF_ENABLED],
+                    CONF_REFRESH: int(
+                        user_input[CONF_REFRESH]
+                    ),
+                    CONF_ENABLED: bool(
+                        user_input[CONF_ENABLED]
+                    ),
                 },
             )
 
         return self.async_show_form(
             step_id="user",
-            data_schema=self._schema(),
+            data_schema=self._schema(
+                username="",
+                device_ids=[],
+                refresh=DEFAULT_REFRESH,
+                enabled=DEFAULT_ENABLED,
+            ),
         )
 
     @staticmethod
-    def _schema():
-        """Return initial configuration schema."""
+    def _schema(
+        username: str,
+        device_ids: list[str],
+        refresh: int,
+        enabled: bool,
+    ) -> vol.Schema:
+        """Return the configuration schema."""
 
         return vol.Schema(
             {
                 vol.Required(
                     CONF_USERNAME,
+                    default=username,
                 ): selector.TextSelector(),
 
                 vol.Required(
                     CONF_DEVICE_ID,
+                    default=device_ids,
                 ): selector.DeviceSelector(
                     selector.DeviceSelectorConfig(
                         integration="mqtt",
@@ -96,7 +140,7 @@ class GitHubHeatmapConfigFlow(
 
                 vol.Required(
                     CONF_REFRESH,
-                    default=DEFAULT_REFRESH,
+                    default=refresh,
                 ): selector.NumberSelector(
                     selector.NumberSelectorConfig(
                         min=1,
@@ -109,7 +153,7 @@ class GitHubHeatmapConfigFlow(
 
                 vol.Required(
                     CONF_ENABLED,
-                    default=DEFAULT_ENABLED,
+                    default=enabled,
                 ): selector.BooleanSelector(),
             }
         )
@@ -118,7 +162,7 @@ class GitHubHeatmapConfigFlow(
     def async_get_options_flow(
         config_entry: config_entries.ConfigEntry,
     ) -> config_entries.OptionsFlow:
-        """Return options flow."""
+        """Return the options flow."""
 
         return GitHubHeatmapOptionsFlow()
 
@@ -130,68 +174,97 @@ class GitHubHeatmapOptionsFlow(
 
     async def async_step_init(
         self,
-        user_input: dict | None = None,
-    ):
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
         """Handle configuration changes."""
 
-        current_data = self.config_entry.data
-        current_options = self.config_entry.options
-
-        username = current_options.get(
+        current_username = self.config_entry.options.get(
             CONF_USERNAME,
-            current_data.get(CONF_USERNAME, ""),
+            self.config_entry.data.get(
+                CONF_USERNAME,
+                "",
+            ),
         )
 
-        device_ids = current_options.get(
+        current_devices = self.config_entry.options.get(
             CONF_DEVICE_ID,
-            current_data.get(CONF_DEVICE_ID, []),
+            self.config_entry.data.get(
+                CONF_DEVICE_ID,
+                [],
+            ),
         )
 
-        if isinstance(device_ids, str):
-            device_ids = [device_ids]
+        if isinstance(current_devices, str):
+            current_devices = [current_devices]
 
-        refresh = current_options.get(
-            CONF_REFRESH,
-            DEFAULT_REFRESH,
+        current_devices = list(
+            dict.fromkeys(current_devices)
         )
 
-        enabled = current_options.get(
-            CONF_ENABLED,
-            DEFAULT_ENABLED,
+        current_refresh = int(
+            self.config_entry.options.get(
+                CONF_REFRESH,
+                DEFAULT_REFRESH,
+            )
+        )
+
+        current_enabled = bool(
+            self.config_entry.options.get(
+                CONF_ENABLED,
+                DEFAULT_ENABLED,
+            )
         )
 
         if user_input is not None:
-            username = user_input[CONF_USERNAME].strip()
+            username = user_input[
+                CONF_USERNAME
+            ].strip()
 
-            device_ids = sorted(
-                set(user_input[CONF_DEVICE_ID])
+            device_ids = user_input[
+                CONF_DEVICE_ID
+            ]
+
+            if isinstance(device_ids, str):
+                device_ids = [device_ids]
+
+            device_ids = list(
+                dict.fromkeys(device_ids)
             )
 
-            refresh = user_input[CONF_REFRESH]
-            enabled = user_input[CONF_ENABLED]
+            refresh = int(
+                user_input[CONF_REFRESH]
+            )
+
+            enabled = bool(
+                user_input[CONF_ENABLED]
+            )
 
             if not username:
                 return self.async_show_form(
                     step_id="init",
                     data_schema=self._schema(
-                        username,
-                        device_ids,
-                        refresh,
-                        enabled,
+                        username=username,
+                        device_ids=device_ids,
+                        refresh=refresh,
+                        enabled=enabled,
                     ),
-                    errors={"base": "invalid_username"},
+                    errors={
+                        "base": "invalid_username"
+                    },
                 )
 
             if not device_ids:
                 return self.async_show_form(
                     step_id="init",
                     data_schema=self._schema(
-                        username,
-                        device_ids,
-                        refresh,
-                        enabled,
+                        username=username,
+                        device_ids=device_ids,
+                        refresh=refresh,
+                        enabled=enabled,
                     ),
-                    errors={"base": "no_device"},
+                    errors={
+                        "base": "no_device"
+                    },
                 )
 
             return self.async_create_entry(
@@ -207,10 +280,10 @@ class GitHubHeatmapOptionsFlow(
         return self.async_show_form(
             step_id="init",
             data_schema=self._schema(
-                username,
-                device_ids,
-                refresh,
-                enabled,
+                username=current_username,
+                device_ids=current_devices,
+                refresh=current_refresh,
+                enabled=current_enabled,
             ),
         )
 
@@ -220,8 +293,8 @@ class GitHubHeatmapOptionsFlow(
         device_ids: list[str],
         refresh: int,
         enabled: bool,
-    ):
-        """Return options schema."""
+    ) -> vol.Schema:
+        """Return the options schema."""
 
         return vol.Schema(
             {

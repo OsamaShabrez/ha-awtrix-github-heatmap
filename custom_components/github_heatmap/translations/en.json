@@ -11,10 +11,10 @@
           "enabled": "Enabled"
         },
         "data_description": {
-          "username": "One GitHub account per integration entry.",
+          "username": "The GitHub account to display.",
           "device_id": "Select one or more AWTRIX NG clocks.",
-          "refresh": "How often to fetch GitHub contribution data.",
-          "enabled": "Disable to remove the app from all selected clocks."
+          "refresh": "How often GitHub contribution data is fetched.",
+          "enabled": "When disabled, the GitHub Heatmap app is removed from all selected clocks."
         }
       }
     },
@@ -27,7 +27,7 @@
     "step": {
       "init": {
         "title": "GitHub Heatmap",
-        "description": "Change the GitHub account, AWTRIX clocks, refresh interval, or enabled state.",
+        "description": "Change the GitHub account, selected clocks, refresh interval, or enabled state.",
         "data": {
           "username": "GitHub username",
           "device_id": "AWTRIX clocks",
@@ -35,16 +35,22 @@
           "enabled": "Enabled"
         },
         "data_description": {
-          "username": "One GitHub account per integration entry.",
+          "username": "The GitHub account to display.",
           "device_id": "Select one or more AWTRIX NG clocks.",
-          "refresh": "How often to fetch GitHub contribution data.",
-          "enabled": "Disable to remove the app from all selected clocks."
+          "refresh": "How often GitHub contribution data is fetched.",
+          "enabled": "When disabled, the GitHub Heatmap app is removed from all selected clocks."
         }
       }
     },
     "error": {
       "invalid_username": "GitHub username cannot be empty.",
       "no_device": "Select at least one AWTRIX clock."
+    }
+  },
+  "services": {
+    "refresh": {
+      "name": "Refresh",
+      "description": "Fetch the latest GitHub contribution data and publish the heatmap to all enabled AWTRIX clocks."
     }
   }
 }
