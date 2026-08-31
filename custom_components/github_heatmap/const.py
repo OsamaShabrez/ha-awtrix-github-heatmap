@@ -27,10 +27,6 @@ PANEL_H = 8
 # Avatar is intentionally enabled permanently.
 AVATAR_CACHE_HOURS = 24
 
-# Current rendering configuration requested by the user.
-RAINBOW_MONTHS = False
-SPLIT_MONTHS = False
-
 API_RETRIES = 3
 MQTT_RETRIES = 3
 MQTT_RETRY_DELAY = 2
