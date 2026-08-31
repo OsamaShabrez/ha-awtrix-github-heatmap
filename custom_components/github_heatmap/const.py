@@ -6,9 +6,11 @@ CONF_USERNAME = "username"
 CONF_DEVICE_ID = "device_id"
 CONF_REFRESH = "refresh"
 CONF_ENABLED = "enabled"
+CONF_ICON_ID = "icon_id"
 
 DEFAULT_REFRESH = 60
 DEFAULT_ENABLED = True
+DEFAULT_ICON_ID = ""
 
 API_URL = (
     "https://github-contributions-api.jogruber.de/v4/"
@@ -24,7 +26,6 @@ APP_NAME = "github_heatmap"
 PANEL_W = 32
 PANEL_H = 8
 
-# Avatar is intentionally enabled permanently.
 AVATAR_CACHE_HOURS = 24
 
 API_RETRIES = 3

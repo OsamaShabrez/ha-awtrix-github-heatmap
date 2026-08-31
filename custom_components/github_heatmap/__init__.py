@@ -10,9 +10,11 @@ from homeassistant.helpers import config_validation as cv
 from .const import (
     CONF_DEVICE_ID,
     CONF_ENABLED,
+    CONF_ICON_ID,
     CONF_REFRESH,
     CONF_USERNAME,
     DEFAULT_ENABLED,
+    DEFAULT_ICON_ID,
     DEFAULT_REFRESH,
     DOMAIN,
     SERVICE_REFRESH,
@@ -100,12 +102,21 @@ async def async_setup_entry(
         )
     )
 
+    icon_id = str(
+        entry.options.get(
+            CONF_ICON_ID,
+            DEFAULT_ICON_ID,
+        )
+        or ""
+    ).strip()
+
     coordinator = GitHubHeatmapCoordinator(
         hass=hass,
         username=username,
         device_ids=device_ids,
         refresh_minutes=refresh,
         enabled=enabled,
+        icon_id=icon_id,
         entry_id=entry.entry_id,
     )
 

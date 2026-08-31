@@ -39,20 +39,37 @@ Then add **GitHub Heatmap** from:
 
 ## Configuration
 
-| Option               | Description                   |
-| -------------------- | ----------------------------- |
-| **GitHub username**  | GitHub account to display     |
-| **AWTRIX clocks**    | One or more AWTRIX NG clocks  |
-| **Refresh interval** | Contribution refresh interval |
-| **Enabled**          | Enable or disable the heatmap |
+| Option               | Description                                              |
+| -------------------- | -------------------------------------------------------- |
+| **GitHub username**  | GitHub account to display                                |
+| **AWTRIX clocks**    | One or more AWTRIX NG clocks                             |
+| **Refresh interval** | Contribution refresh interval                            |
+| **Enabled**          | Enable or disable the heatmap                            |
+| **AWTRIX icon ID**   | Optional icon ID already uploaded to the selected clocks |
 
 Each integration entry represents one GitHub account. Multiple accounts can be configured using separate entries.
 
 ## Display
 
-The heatmap is rendered for the AWTRIX NG **32×8 matrix**, with the GitHub avatar displayed alongside the contribution calendar.
+The heatmap is rendered for the AWTRIX NG **32×8 matrix**.
 
-The avatar is cached, so it is not downloaded on every contribution refresh.
+By default, the GitHub avatar is displayed alongside the contribution calendar.
+
+### Optional AWTRIX icon
+
+You can optionally specify an **AWTRIX icon ID** in the integration configuration.
+
+The icon must be **uploaded to the AWTRIX NG clock by the user before configuring the integration**. This integration does not upload or manage icons on the clock.
+
+If an icon ID is configured:
+
+- The configured AWTRIX icon is displayed instead of the GitHub avatar.
+- The GitHub avatar is not downloaded.
+- The heatmap keeps the same 8×8 icon area and separator.
+- The icon must already exist on **every selected AWTRIX clock**.
+- The same icon ID is used for all selected clocks.
+
+If the icon ID is left empty, the GitHub avatar is used instead.
 
 ## Reliability
 

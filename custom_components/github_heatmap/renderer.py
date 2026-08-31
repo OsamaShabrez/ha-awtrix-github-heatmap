@@ -28,11 +28,10 @@ def build_column(
             day["date"]
         )
 
-        # GitHub uses Sunday -> Saturday.
-        # Row 0 is reserved for the month marker.
-        row = (
-            current.weekday() + 1
-        )
+        # GitHub weeks run Sunday -> Saturday.
+        # Row 0 is reserved for the month marker,
+        # so weekdays occupy rows 1 -> 7.
+        row = current.weekday() + 2
 
         if row < 1 or row > 7:
             continue
@@ -56,6 +55,7 @@ def build_column(
 def build_grid(
     days: list[dict],
     avatar: list[int] | None = None,
+    reserve_left: bool = False,
 ) -> list[int]:
     """Build a 32x8 column-major pixel buffer."""
 
@@ -130,10 +130,14 @@ def build_grid(
 
     # Avatar: columns 0-7.
     # Column 8: one-pixel separator.
+    has_avatar = (
+        avatar is not None
+        and len(avatar) == 64
+    )
+
     heatmap_offset = (
         9
-        if avatar is not None
-        and len(avatar) == 64
+        if has_avatar or reserve_left
         else 0
     )
 
