@@ -31,10 +31,9 @@ def build_column(
         # GitHub weeks run Sunday -> Saturday.
         # Row 0 is reserved for the month marker,
         # so weekdays occupy rows 1 -> 7.
-        row = current.weekday() + 2
-
-        if row < 1 or row > 7:
-            continue
+        row = (
+            (current.weekday() + 1) % 7
+        ) + 1
 
         level = min(
             max(
