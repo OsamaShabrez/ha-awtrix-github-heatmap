@@ -1,147 +1,89 @@
 # AWTRIX NG GitHub Heatmap
 
-Display your **GitHub contribution heatmap on AWTRIX NG clocks through Home Assistant**.
+Display your GitHub contribution activity on an **AWTRIX NG clock through Home Assistant**.
 
-A native Home Assistant custom integration that fetches the last 365 days of GitHub contribution data, renders it for the AWTRIX NG **32×8 matrix**, and publishes it over MQTT.
+The integration fetches your contribution history, renders a compact 365-day heatmap for the AWTRIX NG 32×8 display, and publishes it over MQTT.
 
 ## Features
 
 - 📊 365-day GitHub contribution heatmap
-- 👤 GitHub avatar rendered as an 8×8 image
-- 🖥️ Multiple AWTRIX NG clocks per integration
-- 👥 One GitHub account per integration entry
+- 🖥️ Multiple AWTRIX NG clocks
+- 👤 GitHub avatar display
 - 🔄 Configurable refresh interval
 - 💾 Avatar caching
 - 📡 Per-clock MQTT handling
-- ⚡ Automatic republishing when a clock comes back online
-- 🚫 Automatic app removal when disabled or a clock is removed
-- 🔄 Manual refresh via `github_heatmap.refresh`
-- 📈 Home Assistant status sensors
-- 🌈 Rainbow months disabled
-- 📅 Month splitting disabled
-
-## How it works
-
-```mermaid
-flowchart LR
-    G["GitHub"] -->|HTTPS| API["GitHub Contributions API"]
-    API -->|Contribution data| HA["Home Assistant"]
-    HA --> R["Render 32×8 bitmap"]
-    R -->|MQTT| AW["AWTRIX NG"]
-```
-
-The MQTT prefix is discovered dynamically from the selected AWTRIX NG device in Home Assistant. Clock names and MQTT prefixes are not hardcoded.
-
-## Configuration
-
-Install **GitHub Heatmap** through HACS, then go to:
-
-**Settings → Devices & services → Add integration → GitHub Heatmap**
-
-Configure:
-
-| Setting | Description |
-|---|---|
-| **GitHub username** | Account whose contribution heatmap is displayed |
-| **AWTRIX clocks** | One or more AWTRIX NG clocks |
-| **Refresh interval** | How often contribution data is refreshed |
-| **Enabled** | Enable or disable the display |
-
-Multiple GitHub accounts can be configured by creating separate integration entries.
-
-### Defaults
-
-- Avatar: **ON**
-- Rainbow months: **OFF**
-- Month split: **OFF**
-- Refresh: **60 minutes**
-- Matrix: **32×8**
-
-## Rendering
-
-The display uses the AWTRIX NG **32×8** matrix. The first 8 columns contain the avatar, followed by a one-pixel separator. The remaining area displays the contribution heatmap.
-
-Contribution levels use GitHub-style green shades.
-
-## Reliability
-
-Temporary GitHub or MQTT failures do not intentionally clear the last valid display.
-
-Each selected AWTRIX clock is handled independently. If a clock goes offline and later returns, the current heatmap is automatically republished.
-
-Configuration changes are applied through the integration:
-
-- Disabling removes the app from selected clocks.
-- Enabling republishes the app.
-- Adding a clock publishes to it.
-- Removing a clock removes the app from it.
-- Changing the username or refresh interval applies the new configuration.
-
-No separate removal automation is required.
-
-## Manual refresh
-
-The integration provides:
-
-```yaml
-action: github_heatmap.refresh
-```
-
-This immediately fetches the latest contribution data, renders the heatmap, and publishes it to the selected clocks.
-
-## GitHub API
-
-The integration uses:
-
-```text
-https://github-contributions-api.jogruber.de/v4/<USERNAME>?y=last
-```
-
-The `?y=last` endpoint provides the contribution data used to recreate GitHub's last-year contribution calendar.
+- ⚡ Automatic recovery when a clock comes back online
+- 🚫 Automatic app cleanup when disabled or a clock is removed
+- 🔄 Manual refresh service
+- 📈 Home Assistant status information
+- 👥 Multiple GitHub accounts through separate integration entries
 
 ## Installation
 
 ### HACS
 
-Search for **AWTRIX NG GitHub Heatmap** in HACS and install it.
+[![Open your Home Assistant instance and show the integration page.](https://my.home-assistant.io/badges/integration.svg)](https://my.home-assistant.io/redirect/integration/?domain=github_heatmap)
 
-During development, the repository can also be added as a HACS custom repository:
+If the repository is not yet available in the HACS default repository list, add it as a custom repository:
 
-```text
-https://github.com/OsamaShabrez/ha-awtrix-github-heatmap
-```
+1. Open **HACS → Integrations**
+2. Open the **⋮** menu
+3. Select **Custom repositories**
+4. Add `https://github.com/OsamaShabrez/ha-awtrix-github-heatmap`
+5. Select **Integration**
+6. Install **AWTRIX NG GitHub Heatmap**
 
-Select **Integration**.
-
-Then add **GitHub Heatmap** through:
+Then add **GitHub Heatmap** from:
 
 **Settings → Devices & services → Add integration**
 
-## Development
+## Configuration
 
-The integration is located at:
+| Option               | Description                   |
+| -------------------- | ----------------------------- |
+| **GitHub username**  | GitHub account to display     |
+| **AWTRIX clocks**    | One or more AWTRIX NG clocks  |
+| **Refresh interval** | Contribution refresh interval |
+| **Enabled**          | Enable or disable the heatmap |
 
-```text
-custom_components/github_heatmap/
+Each integration entry represents one GitHub account. Multiple accounts can be configured using separate entries.
+
+## Display
+
+The heatmap is rendered for the AWTRIX NG **32×8 matrix**, with the GitHub avatar displayed alongside the contribution calendar.
+
+The avatar is cached, so it is not downloaded on every contribution refresh.
+
+## Reliability
+
+The integration is designed to handle temporary connectivity problems without unnecessarily clearing the display.
+
+- GitHub API failures retain the last valid data.
+- MQTT failures are handled independently per clock.
+- Offline clocks are updated automatically when they return.
+- Adding a clock publishes the current heatmap.
+- Removing a clock removes the app from that clock.
+- Disabling the integration removes the app from the selected clocks.
+
+No separate Home Assistant automation is required for cleanup.
+
+## Manual refresh
+
+The integration provides the `github_heatmap.refresh` action:
+
+```yaml
+action: github_heatmap.refresh
 ```
 
-GitHub Actions validate the repository with HACS and Home Assistant Hassfest.
+This immediately refreshes the contribution data and republishes the heatmap to the selected clocks.
 
-## Credits
+## GitHub data
 
-Inspired by and built using the **[GitHub Contributions API](https://github.com/grubersjoe/github-contributions-api)** by **[grubersjoe](https://github.com/grubersjoe)**.
+Contribution data is provided by the [GitHub Contributions API](https://github.com/grubersjoe/github-contributions-api).
 
-Built as a native Home Assistant custom integration for AWTRIX NG and distributed through HACS.
+The integration uses the upstream API's last-year contribution dataset.
 
-## License
-
-See [LICENSE](LICENSE) for the project license.
-
-The upstream GitHub Contributions API has its own license; see the upstream project for its terms.
-
-## Contributing
-
-Issues, bug reports, improvements, and pull requests are welcome.
+## Support
 
 When reporting an issue, include:
 
@@ -149,6 +91,14 @@ When reporting an issue, include:
 - GitHub Heatmap version
 - AWTRIX NG firmware version
 - Number of configured clocks
-- Relevant Home Assistant/MQTT logs
+- Relevant Home Assistant or MQTT logs
 
-**Never include GitHub tokens, MQTT credentials, passwords, or other secrets.**
+Remove credentials, tokens, passwords, and other sensitive information before posting logs.
+
+## Credits
+
+This project was inspired by and uses the **[GitHub Contributions API](https://github.com/grubersjoe/github-contributions-api)** created by **[grubersjoe](https://github.com/grubersjoe)**.
+
+## License
+
+Licensed under the Apache License 2.0. See [LICENSE](LICENSE).
