@@ -28,11 +28,10 @@ def build_column(
             day["date"]
         )
 
-        # GitHub uses Sunday -> Saturday.
-        # Row 0 is reserved for the month marker.
-        row = (
-            current.weekday() + 1
-        )
+        # GitHub weeks run Sunday -> Saturday.
+        # Row 0 is reserved for the month marker,
+        # so weekdays occupy rows 1 -> 7.
+        row = current.weekday() + 2
 
         if row < 1 or row > 7:
             continue
