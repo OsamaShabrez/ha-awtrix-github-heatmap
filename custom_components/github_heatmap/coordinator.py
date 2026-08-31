@@ -47,12 +47,14 @@ class GitHubHeatmapCoordinator(
         device_ids: list[str],
         refresh_minutes: int,
         enabled: bool,
+        icon_id: str,
         entry_id: str,
     ) -> None:
         self.username = username
         self.device_ids = list(device_ids)
         self.refresh_minutes = refresh_minutes
         self.enabled = enabled
+        self.icon_id = icon_id.strip()
         self.entry_id = entry_id
 
         self.last_successful_update: (
@@ -451,11 +453,15 @@ class GitHubHeatmapCoordinator(
         if not contributions:
             return None
 
-        avatar = await self.fetch_avatar()
+        avatar = None
+
+        if not self.icon_id:
+            avatar = await self.fetch_avatar()
 
         pixels = build_grid(
             contributions,
             avatar=avatar,
+            reserve_left=bool(self.icon_id),
         )
 
         bitmap = to_row_major(
@@ -509,6 +515,9 @@ class GitHubHeatmapCoordinator(
             "lifetimeMs": lifetime_ms,
             "lifetimeExpiry": "remove",
         }
+
+        if self.icon_id:
+            payload["icon"] = self.icon_id
 
         return json.dumps(
             payload,

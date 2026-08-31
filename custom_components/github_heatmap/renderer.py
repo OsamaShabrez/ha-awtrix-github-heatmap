@@ -56,6 +56,7 @@ def build_column(
 def build_grid(
     days: list[dict],
     avatar: list[int] | None = None,
+    reserve_left: bool = False,
 ) -> list[int]:
     """Build a 32x8 column-major pixel buffer."""
 
@@ -130,10 +131,14 @@ def build_grid(
 
     # Avatar: columns 0-7.
     # Column 8: one-pixel separator.
+    has_avatar = (
+        avatar is not None
+        and len(avatar) == 64
+    )
+
     heatmap_offset = (
         9
-        if avatar is not None
-        and len(avatar) == 64
+        if has_avatar or reserve_left
         else 0
     )
 

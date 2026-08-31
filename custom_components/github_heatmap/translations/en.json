@@ -8,43 +8,49 @@
           "username": "GitHub username",
           "device_id": "AWTRIX clocks",
           "refresh": "Refresh interval (minutes)",
-          "enabled": "Enabled"
+          "enabled": "Enabled",
+          "icon_id": "AWTRIX icon ID (optional)"
         },
         "data_description": {
           "username": "The GitHub account to display.",
           "device_id": "Select one or more AWTRIX NG clocks.",
           "refresh": "How often GitHub contribution data is fetched.",
-          "enabled": "When disabled, the GitHub Heatmap app is removed from all selected clocks."
+          "enabled": "When disabled, the GitHub Heatmap app is removed from all selected clocks.",
+          "icon_id": "Optional numeric ID of an icon already uploaded to the AWTRIX clock. Leave empty to use your GitHub avatar."
         }
       }
     },
     "error": {
       "invalid_username": "GitHub username cannot be empty.",
-      "no_device": "Select at least one AWTRIX clock."
+      "no_device": "Select at least one AWTRIX clock.",
+      "invalid_icon_id": "AWTRIX icon ID must contain only numbers."
     }
   },
   "options": {
     "step": {
       "init": {
         "title": "GitHub Heatmap",
-        "description": "Change the GitHub account, selected clocks, refresh interval, or enabled state.",
+        "description": "Change the GitHub account, selected clocks, refresh interval, enabled state, or display icon.",
         "data": {
           "username": "GitHub username",
           "device_id": "AWTRIX clocks",
           "refresh": "Refresh interval (minutes)",
-          "enabled": "Enabled"
+          "enabled": "Enabled",
+          "icon_id": "AWTRIX icon ID (optional)"
         },
         "data_description": {
           "username": "The GitHub account to display.",
           "device_id": "Select one or more AWTRIX NG clocks.",
           "refresh": "How often GitHub contribution data is fetched.",
-          "enabled": "When disabled, the GitHub Heatmap app is removed from all selected clocks."
+          "enabled": "When disabled, the GitHub Heatmap app is removed from all selected clocks.",
+          "icon_id": "Optional numeric ID of an icon already uploaded to the AWTRIX clock. Leave empty to use your GitHub avatar."
         }
       }
     },
     "error": {
       "invalid_username": "GitHub username cannot be empty.",
-      "no_device": "Select at least one AWTRIX clock."
+      "no_device": "Select at least one AWTRIX clock.",
+      "invalid_icon_id": "AWTRIX icon ID must contain only numbers."
     }
   },
   "services": {

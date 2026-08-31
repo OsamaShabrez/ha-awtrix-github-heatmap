@@ -10,12 +10,30 @@ from homeassistant.helpers import selector
 from .const import (
     CONF_DEVICE_ID,
     CONF_ENABLED,
+    CONF_ICON_ID,
     CONF_REFRESH,
     CONF_USERNAME,
     DEFAULT_ENABLED,
+    DEFAULT_ICON_ID,
     DEFAULT_REFRESH,
     DOMAIN,
 )
+
+
+def _normalize_icon_id(value: Any) -> str:
+    """Normalize an optional AWTRIX icon ID."""
+
+    value = str(value or "").strip()
+
+    if not value:
+        return ""
+
+    if not value.isdigit():
+        raise vol.Invalid(
+            "Icon ID must contain only numbers."
+        )
+
+    return value
 
 
 class GitHubHeatmapConfigFlow(
@@ -33,9 +51,13 @@ class GitHubHeatmapConfigFlow(
         """Handle initial setup."""
 
         if user_input is not None:
-            username = user_input[CONF_USERNAME].strip()
+            username = user_input[
+                CONF_USERNAME
+            ].strip()
 
-            device_ids = user_input[CONF_DEVICE_ID]
+            device_ids = user_input[
+                CONF_DEVICE_ID
+            ]
 
             if isinstance(device_ids, str):
                 device_ids = [device_ids]
@@ -44,20 +66,55 @@ class GitHubHeatmapConfigFlow(
                 dict.fromkeys(device_ids)
             )
 
+            refresh = int(
+                user_input.get(
+                    CONF_REFRESH,
+                    DEFAULT_REFRESH,
+                )
+            )
+
+            enabled = bool(
+                user_input.get(
+                    CONF_ENABLED,
+                    DEFAULT_ENABLED,
+                )
+            )
+
+            icon_id_raw = user_input.get(
+                CONF_ICON_ID,
+                DEFAULT_ICON_ID,
+            )
+
+            try:
+                icon_id = _normalize_icon_id(
+                    icon_id_raw
+                )
+            except vol.Invalid:
+                return self.async_show_form(
+                    step_id="user",
+                    data_schema=self._schema(
+                        username=username,
+                        device_ids=device_ids,
+                        refresh=refresh,
+                        enabled=enabled,
+                        icon_id=str(
+                            icon_id_raw or ""
+                        ),
+                    ),
+                    errors={
+                        "base": "invalid_icon_id"
+                    },
+                )
+
             if not username:
                 return self.async_show_form(
                     step_id="user",
                     data_schema=self._schema(
                         username=username,
                         device_ids=device_ids,
-                        refresh=user_input.get(
-                            CONF_REFRESH,
-                            DEFAULT_REFRESH,
-                        ),
-                        enabled=user_input.get(
-                            CONF_ENABLED,
-                            DEFAULT_ENABLED,
-                        ),
+                        refresh=refresh,
+                        enabled=enabled,
+                        icon_id=icon_id,
                     ),
                     errors={
                         "base": "invalid_username"
@@ -70,14 +127,9 @@ class GitHubHeatmapConfigFlow(
                     data_schema=self._schema(
                         username=username,
                         device_ids=device_ids,
-                        refresh=user_input.get(
-                            CONF_REFRESH,
-                            DEFAULT_REFRESH,
-                        ),
-                        enabled=user_input.get(
-                            CONF_ENABLED,
-                            DEFAULT_ENABLED,
-                        ),
+                        refresh=refresh,
+                        enabled=enabled,
+                        icon_id=icon_id,
                     ),
                     errors={
                         "base": "no_device"
@@ -93,12 +145,9 @@ class GitHubHeatmapConfigFlow(
                 options={
                     CONF_USERNAME: username,
                     CONF_DEVICE_ID: device_ids,
-                    CONF_REFRESH: int(
-                        user_input[CONF_REFRESH]
-                    ),
-                    CONF_ENABLED: bool(
-                        user_input[CONF_ENABLED]
-                    ),
+                    CONF_REFRESH: refresh,
+                    CONF_ENABLED: enabled,
+                    CONF_ICON_ID: icon_id,
                 },
             )
 
@@ -109,6 +158,7 @@ class GitHubHeatmapConfigFlow(
                 device_ids=[],
                 refresh=DEFAULT_REFRESH,
                 enabled=DEFAULT_ENABLED,
+                icon_id=DEFAULT_ICON_ID,
             ),
         )
 
@@ -118,6 +168,7 @@ class GitHubHeatmapConfigFlow(
         device_ids: list[str],
         refresh: int,
         enabled: bool,
+        icon_id: str,
     ) -> vol.Schema:
         """Return the configuration schema."""
 
@@ -155,6 +206,11 @@ class GitHubHeatmapConfigFlow(
                     CONF_ENABLED,
                     default=enabled,
                 ): selector.BooleanSelector(),
+
+                vol.Optional(
+                    CONF_ICON_ID,
+                    default=icon_id,
+                ): selector.TextSelector(),
             }
         )
 
@@ -215,6 +271,14 @@ class GitHubHeatmapOptionsFlow(
             )
         )
 
+        current_icon_id = str(
+            self.config_entry.options.get(
+                CONF_ICON_ID,
+                DEFAULT_ICON_ID,
+            )
+            or ""
+        ).strip()
+
         if user_input is not None:
             username = user_input[
                 CONF_USERNAME
@@ -239,6 +303,32 @@ class GitHubHeatmapOptionsFlow(
                 user_input[CONF_ENABLED]
             )
 
+            icon_id_raw = user_input.get(
+                CONF_ICON_ID,
+                DEFAULT_ICON_ID,
+            )
+
+            try:
+                icon_id = _normalize_icon_id(
+                    icon_id_raw
+                )
+            except vol.Invalid:
+                return self.async_show_form(
+                    step_id="init",
+                    data_schema=self._schema(
+                        username=username,
+                        device_ids=device_ids,
+                        refresh=refresh,
+                        enabled=enabled,
+                        icon_id=str(
+                            icon_id_raw or ""
+                        ),
+                    ),
+                    errors={
+                        "base": "invalid_icon_id"
+                    },
+                )
+
             if not username:
                 return self.async_show_form(
                     step_id="init",
@@ -247,6 +337,7 @@ class GitHubHeatmapOptionsFlow(
                         device_ids=device_ids,
                         refresh=refresh,
                         enabled=enabled,
+                        icon_id=icon_id,
                     ),
                     errors={
                         "base": "invalid_username"
@@ -261,6 +352,7 @@ class GitHubHeatmapOptionsFlow(
                         device_ids=device_ids,
                         refresh=refresh,
                         enabled=enabled,
+                        icon_id=icon_id,
                     ),
                     errors={
                         "base": "no_device"
@@ -274,6 +366,7 @@ class GitHubHeatmapOptionsFlow(
                     CONF_DEVICE_ID: device_ids,
                     CONF_REFRESH: refresh,
                     CONF_ENABLED: enabled,
+                    CONF_ICON_ID: icon_id,
                 },
             )
 
@@ -284,6 +377,7 @@ class GitHubHeatmapOptionsFlow(
                 device_ids=current_devices,
                 refresh=current_refresh,
                 enabled=current_enabled,
+                icon_id=current_icon_id,
             ),
         )
 
@@ -293,6 +387,7 @@ class GitHubHeatmapOptionsFlow(
         device_ids: list[str],
         refresh: int,
         enabled: bool,
+        icon_id: str,
     ) -> vol.Schema:
         """Return the options schema."""
 
@@ -330,5 +425,10 @@ class GitHubHeatmapOptionsFlow(
                     CONF_ENABLED,
                     default=enabled,
                 ): selector.BooleanSelector(),
+
+                vol.Optional(
+                    CONF_ICON_ID,
+                    default=icon_id,
+                ): selector.TextSelector(),
             }
         )
