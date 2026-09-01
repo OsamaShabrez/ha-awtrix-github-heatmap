@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="custom_components/github_heatmap/brand/header.png" alt="AWTRIX NG GitHub Heatmap" width="100%">
+</p>
+
 # AWTRIX NG GitHub Heatmap
 
 Display your GitHub contribution activity on an **AWTRIX NG clock through Home Assistant**.
